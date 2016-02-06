@@ -49,10 +49,11 @@ programming languages.
 A type is used to describe the syntax of an argument for a defined pattern or
 filter.
 
-In general, the value of a type may contain any character that is valid as a
-file name, except for `,`, `(`, and `)`. To include invalid characters, the
-value may be enclosed in `"` characters. In this case, `\` may be used to
-escape quotes and escapes.
+In general, an argument may be a sequence of any characters, terminated by `,`
+(next argument) or `)` (end of arguments). `\` May be used to escape the next
+character. This can be used to treat `,` or `)` characters literally, as well
+as any character interpreted specially by the argument type. Note that leading
+and trailing whitespace characters are not ignored.
 
 Types:
 
@@ -60,15 +61,16 @@ Types:
 	- A string value. Basically any text as described above.
 - Name
 	- A string used to match an item.
-	- (word): Match the literal text.
 	- `*`: Match anything.
+	- (text): Match the literal text.
 - Class
 	- Similar to Name. Indicates the name of a class.
 	- Can be prefixed with `@` to select only the class name, and not any
 	  classes that inherit from it.
 - FileName
 	- A file name.
-	- Any characters that make up a valid file name.
+	- Any characters that make up a valid file name (enforced by the
+	  filesystem rather than the parser).
 	- May contain `*`, which matches 0 or more characters.
 
 ### Patterns and Filters
@@ -91,29 +93,27 @@ and another for `in` rules.
 #### Out Filters
 
 - `File(name String)`
-	- Write selected objects to a file in the current directory.
+	- Write selected items to a file in the current directory.
 	- `name` determines the file name. The format of the file is determined by the extension.
-	- The following formats are supported:
+	- The following formats are supported for objects:
 		- `rbxm`: Binary Roblox Model
 		- `rbxmx`: XML Roblox Model
-	- Any number of objects can be matched to the same file, though an object will be written once, at most.
-- `Directory(prop String = properties.json)`
+	- The following formats are supported for properties:
+		- `json`
+		- `xml`
+	- Any number of items can be matched to the same file, though an item will be written once, at most.
+- `Directory()`
 	- Write selected objects as directories.
 	- The name of each directory is the Name property of each object.
 	- If the Name property is not valid as a directory name, then the object is not matched.
-	- Properties of each object not matched by other rules are written to a file
-	  of the name specified by `prop`, within the directory.
-	- The extension determines the format of the file.
-	- The following formats are supported:
-		- `json`
-		- `xml`
 - `PropertyName(format String)`
 	- Writes selected properties to named files.
 	- The name of a selected property determines the base name of the file.
 	- `format`: Determines the format and extension of the file.
 	- The following formats are supported:
-		- `bin`: Writes the value in raw binary format.
-		- `lua`: Writes the value encoded in UTF-8.
+		- `bin`: Receives a BinaryString, and writes the value in raw binary format.
+		- `lua`: Receives a ProtectedString and writes the value encoded in UTF-8.
+		- `txt`: Receives a String and writes the value encoded in UTF-8.
 - `Ignore()`
 	- Ignore selected objects.
 
@@ -155,9 +155,7 @@ and another for `in` rules.
 <rule>     := <type> <func> `:` <func> `\n` ;
 <type>     := `out` | `in` ;
 <func>     := <word> `(` [ <argument> { `,` <argument> } ] `)` ;
-<argument> := `*` | <string> | <filename> - ( `,` | `(` | `)` ) ;
-<string>   := ? Characters contained between two `"`, which may use `\` for escaping. ? ;
-<filename> := ? Any character valid within a file name. ? ;
+<argument> := { `\` <any> | <any> - ( `,` | `)` ) } ;
 <comment>  := `#` { <any> } `\n` ;
 ```
 

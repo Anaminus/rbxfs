@@ -87,12 +87,13 @@ func (f FormatRBXM) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection)
 	}
 	return nil
 }
-func (f FormatRBXM) Decode(r io.Reader, obj *rbxfile.Instance) error {
-	_, err := bin.DeserializeModel(r, f.API)
+func (f FormatRBXM) Decode(r io.Reader) (is ItemSource, err error) {
+	_, err = bin.DeserializeModel(r, f.API)
 	if err != nil {
-		return ErrFmtDecode{err}
+		err = ErrFmtDecode{err}
+		return
 	}
-	return nil
+	return
 }
 
 type FormatRBXMX struct {
@@ -108,8 +109,8 @@ func (FormatRBXMX) Check(obj, prop, val int) bool {
 func (FormatRBXMX) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
 	return nil
 }
-func (FormatRBXMX) Decode(r io.Reader, obj *rbxfile.Instance) error {
-	return nil
+func (FormatRBXMX) Decode(r io.Reader) (is ItemSource, err error) {
+	return
 }
 
 type FormatJSON struct{}
@@ -123,8 +124,8 @@ func (FormatJSON) Check(obj, prop, val int) bool {
 func (FormatJSON) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
 	return nil
 }
-func (FormatJSON) Decode(r io.Reader, obj *rbxfile.Instance) error {
-	return nil
+func (FormatJSON) Decode(r io.Reader) (is ItemSource, err error) {
+	return
 }
 
 type FormatXML struct{}
@@ -138,8 +139,8 @@ func (FormatXML) Check(obj, prop, val int) bool {
 func (FormatXML) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
 	return nil
 }
-func (FormatXML) Decode(r io.Reader, obj *rbxfile.Instance) error {
-	return nil
+func (FormatXML) Decode(r io.Reader) (is ItemSource, err error) {
+	return
 }
 
 type FormatBin struct{}
@@ -153,8 +154,8 @@ func (FormatBin) Check(obj, prop, val int) bool {
 func (FormatBin) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
 	return nil
 }
-func (FormatBin) Decode(r io.Reader, obj *rbxfile.Instance) error {
-	return nil
+func (FormatBin) Decode(r io.Reader) (is ItemSource, err error) {
+	return
 }
 
 type FormatLua struct{}
@@ -168,8 +169,8 @@ func (FormatLua) Check(obj, prop, val int) bool {
 func (FormatLua) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
 	return nil
 }
-func (FormatLua) Decode(r io.Reader, obj *rbxfile.Instance) error {
-	return nil
+func (FormatLua) Decode(r io.Reader) (is ItemSource, err error) {
+	return
 }
 
 type FormatText struct{}
@@ -183,6 +184,6 @@ func (FormatText) Check(obj, prop, val int) bool {
 func (FormatText) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
 	return nil
 }
-func (FormatText) Decode(r io.Reader, obj *rbxfile.Instance) error {
-	return nil
+func (FormatText) Decode(r io.Reader) (is ItemSource, err error) {
+	return
 }

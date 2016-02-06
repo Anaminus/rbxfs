@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/robloxapi/rbxfile"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -81,6 +82,105 @@ type FuncDef struct {
 	OutFilter  map[string]OutFilter
 	InPattern  map[string]InPattern
 	InFilter   map[string]InFilter
+}
+
+func (fd FuncDef) CallOut(pattern, filter ruleFunc, obj *rbxfile.Instance) (om []OutMap, err error) {
+	if pattern.FuncType != Pattern {
+		err = errors.New("pattern function is not a pattern")
+		return
+	}
+	if pattern.FuncType != Filter {
+		err = errors.New("filter function is not a filter")
+		return
+	}
+
+	patternFn, ok := fd.OutPattern[pattern.Name]
+	if !ok {
+		err = errors.New("unknown pattern function")
+		return
+	}
+	filterFn, ok := fd.OutFilter[filter.Name]
+	if !ok {
+		err = errors.New("unknown filter function")
+		return
+	}
+
+	sobj, sprop, err := patternFn.Func(pattern.Args, obj)
+	if err != nil {
+		err = fmt.Errorf("pattern error: %s", err.Error())
+		return
+	}
+	om, err = filterFn.Func(filter.Args, sobj, sprop)
+	if err != nil {
+		err = fmt.Errorf("filter error: %s", err.Error())
+	}
+	return
+}
+func (fd FuncDef) CallIn(pattern, filter ruleFunc, path string) (im []InMap, is []InSelection, err error) {
+	if pattern.FuncType != Pattern {
+		err = errors.New("pattern function is not a pattern")
+		return
+	}
+	if pattern.FuncType != Filter {
+		err = errors.New("filter function is not a filter")
+		return
+	}
+
+	patternFn, ok := fd.InPattern[pattern.Name]
+	if !ok {
+		err = errors.New("unknown pattern function")
+		return
+	}
+	filterFn, ok := fd.InFilter[filter.Name]
+	if !ok {
+		err = errors.New("unknown filter function")
+		return
+	}
+
+	sfile, err := patternFn.Func(pattern.Args, path)
+	if err != nil {
+		err = fmt.Errorf("pattern error: %s", err.Error())
+		return
+	}
+
+	im = make([]InMap, len(sfile))
+	for i, name := range sfile {
+		var format Format
+		switch ext := filepath.Ext(name); ext {
+		case ".rbxm":
+			format = FormatRBXM{}
+		case ".rbxmx":
+			format = FormatRBXMX{}
+		case ".json":
+			format = FormatJSON{}
+		case ".xml":
+			format = FormatXML{}
+		case ".bin":
+			format = FormatBin{}
+		case ".lua":
+			format = FormatLua{}
+		case ".txt":
+			format = FormatText{}
+		default:
+			//error: pattern selected file with unsupported format
+		}
+
+		r, err := os.Open(name)
+		if err != nil {
+			//error?: cannot open file
+		}
+		im[i].Source, err = format.Decode(r)
+		if err != nil {
+			//error?: error decoding file
+		}
+		im[i].File = name
+	}
+
+	is, err = filterFn.Func(filter.Args, im)
+	if err != nil {
+		err = fmt.Errorf("filter error: %s", err.Error())
+	}
+	return
 }
 
 func inherits(obj *rbxfile.Instance, class string) bool {
@@ -341,18 +441,33 @@ const (
 	ruleWordIn  = "in"
 )
 
+type SyncType byte
+
+const (
+	SyncOut SyncType = iota
+	SyncIn
+)
+
+type FuncType byte
+
+const (
+	Pattern FuncType = iota
+	Filter
+)
+
 type ruleFunc struct {
-	Name string
-	Args []Arg
+	SyncType SyncType
+	FuncType FuncType
+	Name     string
+	Args     []Arg
 }
 
 type ruleParser struct {
-	r    io.Reader
-	err  error
-	line int
-	defs FuncDef
-	out  []ruleFunc
-	in   []ruleFunc
+	defs  FuncDef
+	r     io.Reader
+	err   error
+	line  int
+	funcs []ruleFunc
 }
 
 func trimSpace(s string) string {
@@ -374,18 +489,34 @@ func ident(s string) string {
 	return ""
 }
 
-func (d *ruleParser) readRules() {
+type ErrRuleParser struct {
+	Line int
+	Err  error
+}
+
+func (err ErrRuleParser) Error() string {
+	return fmt.Sprintf("line %d: %s", err.Line, err.Err.Error())
+}
+
+func (d *ruleParser) parseRules() (rf []ruleFunc, err error) {
 	s := bufio.NewScanner(d.r)
 	s.Split(bufio.ScanLines)
 	d.line = 1
 	for s.Scan() {
 		d.readLine(s.Text())
 		if d.err != nil {
-			return
+			goto Error
 		}
 		d.line++
 	}
 	d.err = s.Err()
+Error:
+	if d.err != nil {
+		err = ErrRuleParser{Line: d.line, Err: d.err}
+		return
+	}
+	rf = d.funcs
+	return
 }
 
 func (d *ruleParser) readLine(line string) {
@@ -402,14 +533,14 @@ func (d *ruleParser) readLine(line string) {
 }
 
 func (d *ruleParser) readRule(rule string) {
-	var bin *[]ruleFunc
+	var syncType SyncType
 	var patterns map[string][]ArgType
 	var filters map[string][]ArgType
 
 	typ := ident(rule)
 	switch typ {
 	case ruleWordOut:
-		bin = &d.out
+		syncType = SyncOut
 		patterns = make(map[string][]ArgType, len(d.defs.OutPattern))
 		for name, def := range d.defs.OutPattern {
 			patterns[name] = def.Args
@@ -419,7 +550,7 @@ func (d *ruleParser) readRule(rule string) {
 			filters[name] = def.Args
 		}
 	case ruleWordIn:
-		bin = &d.in
+		syncType = SyncIn
 		patterns = make(map[string][]ArgType, len(d.defs.InPattern))
 		for name, def := range d.defs.InPattern {
 			patterns[name] = def.Args
@@ -436,7 +567,9 @@ func (d *ruleParser) readRule(rule string) {
 
 	rule = trimSpace(rule)
 	rule, rf := d.readFunc(rule, patterns)
-	*bin = append(*bin, rf)
+	rf.SyncType = syncType
+	rf.FuncType = Pattern
+	d.funcs = append(d.funcs, rf)
 
 	rule = trimSpace(rule)
 	if strings.HasPrefix(rule, ruleOpSep) {
@@ -448,7 +581,9 @@ func (d *ruleParser) readRule(rule string) {
 
 	rule = trimSpace(rule)
 	rule, rf = d.readFunc(rule, filters)
-	*bin = append(*bin, rf)
+	rf.SyncType = syncType
+	rf.FuncType = Filter
+	d.funcs = append(d.funcs, rf)
 
 	rule = trimSpace(rule)
 	if len(rule) != 0 {
@@ -502,4 +637,12 @@ func (d *ruleParser) readFunc(rule string, args map[string][]ArgType) (left stri
 		return
 	}
 	return rule[len(ruleOpArgClose):], rf
+}
+
+func ParseRules(r io.Reader) (rf []ruleFunc, err error) {
+	p := &ruleParser{
+		defs: DefaultRuleFuncs,
+		r:    r,
+	}
+	return p.parseRules()
 }
