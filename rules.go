@@ -18,7 +18,7 @@ type OutPattern struct {
 }
 type OutFilter struct {
 	Args []ArgType
-	Func func(args []Arg, sobj []int, sprop []string) (om []OutMap, err error)
+	Func func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error)
 }
 type InPattern struct {
 	Args []ArgType
@@ -29,14 +29,22 @@ type InFilter struct {
 	Func func(args []Arg, im []InMap) (is []InSelection, err error)
 }
 
+type OutAction struct {
+	Depth int
+	Dir   []string
+	Map   OutMap
+}
+
 // associates a selection with a file
 type OutMap struct {
 	File      FileDef
-	Selection OutSelection
+	Selection []OutSelection
 }
 
 // Selects items from a source object.
 type OutSelection struct {
+	// The source object.
+	Object *rbxfile.Instance
 	// A list of child objects selected from a source. Each value selects the
 	// nth child.
 	Children []int
@@ -84,60 +92,53 @@ type FuncDef struct {
 	InFilter   map[string]InFilter
 }
 
-func (fd FuncDef) CallOut(pattern, filter ruleFunc, obj *rbxfile.Instance) (om []OutMap, err error) {
-	if pattern.FuncType != Pattern {
-		err = errors.New("pattern function is not a pattern")
-		return
-	}
-	if pattern.FuncType != Filter {
-		err = errors.New("filter function is not a filter")
+func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (om []OutMap, err error) {
+	if pair.SyncType != SyncOut {
+		err = errors.New("expected sync-out function pair")
 		return
 	}
 
-	patternFn, ok := fd.OutPattern[pattern.Name]
+	patternFn, ok := fd.OutPattern[pair.Pattern.Name]
 	if !ok {
 		err = errors.New("unknown pattern function")
 		return
 	}
-	filterFn, ok := fd.OutFilter[filter.Name]
+	filterFn, ok := fd.OutFilter[pair.Filter.Name]
 	if !ok {
 		err = errors.New("unknown filter function")
 		return
 	}
 
-	sobj, sprop, err := patternFn.Func(pattern.Args, obj)
+	sobj, sprop, err := patternFn.Func(pair.Pattern.Args, obj)
 	if err != nil {
 		err = fmt.Errorf("pattern error: %s", err.Error())
 		return
 	}
-	om, err = filterFn.Func(filter.Args, sobj, sprop)
+	om, err = filterFn.Func(pair.Filter.Args, obj, sobj, sprop)
 	if err != nil {
 		err = fmt.Errorf("filter error: %s", err.Error())
 	}
 	return
 }
-func (fd FuncDef) CallIn(pattern, filter ruleFunc, path string) (im []InMap, is []InSelection, err error) {
-	if pattern.FuncType != Pattern {
-		err = errors.New("pattern function is not a pattern")
-		return
-	}
-	if pattern.FuncType != Filter {
-		err = errors.New("filter function is not a filter")
+
+func (fd FuncDef) CallIn(opt *Options, pair rulePair, path string) (im []InMap, is []InSelection, err error) {
+	if pair.SyncType != SyncIn {
+		err = errors.New("expected sync-in function pair")
 		return
 	}
 
-	patternFn, ok := fd.InPattern[pattern.Name]
+	patternFn, ok := fd.InPattern[pair.Pattern.Name]
 	if !ok {
 		err = errors.New("unknown pattern function")
 		return
 	}
-	filterFn, ok := fd.InFilter[filter.Name]
+	filterFn, ok := fd.InFilter[pair.Filter.Name]
 	if !ok {
 		err = errors.New("unknown filter function")
 		return
 	}
 
-	sfile, err := patternFn.Func(pattern.Args, path)
+	sfile, err := patternFn.Func(pair.Pattern.Args, path)
 	if err != nil {
 		err = fmt.Errorf("pattern error: %s", err.Error())
 		return
@@ -148,9 +149,13 @@ func (fd FuncDef) CallIn(pattern, filter ruleFunc, path string) (im []InMap, is 
 		var format Format
 		switch ext := filepath.Ext(name); ext {
 		case ".rbxm":
-			format = FormatRBXM{}
+			format = FormatRBXM{
+				API: opt.API,
+			}
 		case ".rbxmx":
-			format = FormatRBXMX{}
+			format = FormatRBXMX{
+				API: opt.API,
+			}
 		case ".json":
 			format = FormatJSON{}
 		case ".xml":
@@ -176,7 +181,7 @@ func (fd FuncDef) CallIn(pattern, filter ruleFunc, path string) (im []InMap, is 
 		im[i].File = name
 	}
 
-	is, err = filterFn.Func(filter.Args, im)
+	is, err = filterFn.Func(pair.Filter.Args, im)
 	if err != nil {
 		err = fmt.Errorf("filter error: %s", err.Error())
 	}
@@ -193,7 +198,27 @@ func inherits(obj *rbxfile.Instance, class string) bool {
 	return false
 }
 
-var DefaultRuleFuncs = FuncDef{
+func isValidFileName(name string, isDir bool) bool {
+	if len(name) == 0 || len(name) > 255 ||
+		name == "." || name == ".." {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case 'A' <= r && r <= 'Z':
+		case 'a' <= r && r <= 'z':
+		case '0' <= r && r <= '9':
+		case r == '.':
+		case r == '_':
+		case r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+var DefaultRuleDefs = &FuncDef{
 	OutPattern: map[string]OutPattern{
 		"Child": {
 			Args: []ArgType{ArgTypeClass},
@@ -248,49 +273,110 @@ var DefaultRuleFuncs = FuncDef{
 	OutFilter: map[string]OutFilter{
 		"File": {
 			Args: []ArgType{ArgTypeString},
-			Func: func(args []Arg, sobj []int, sprop []string) (om []OutMap, err error) {
+			Func: func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				name := string(args[0].(ArgString))
+				var format Format
 				switch ext := filepath.Ext(name); ext {
 				case "rbxm":
+					format = FormatRBXM{}
 				case "rbxmx":
+					format = FormatRBXMX{}
 				case "json":
+					format = FormatJSON{}
 				case "xml":
+					format = FormatXML{}
 				default:
 					return nil, errors.New("unsupported file extension")
 				}
 
-				// - get format from file extension
-				// - check if format supports selected items
+				sel := []OutSelection{{Object: obj, Children: sobj, Properties: sprop}}
+				if !format.CanEncode(sel) {
+					// ErrFormat{nobj, nprop, nval, Format}
+					return nil, errors.New("selection not supported by format")
+				}
+				om = []OutMap{OutMap{File: FileDef{Name: name, IsDir: false}, Selection: sel}}
 				return
 			},
 		},
 		"Directory": {
 			Args: []ArgType{},
-			Func: func(args []Arg, sobj []int, sprop []string) (om []OutMap, err error) {
+			Func: func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				if len(sprop) > 0 {
 					return nil, errors.New("properties not supported")
 				}
-				// get file name from Name property of each object
-				// if invalid, do not match object
-				// !! name validation is done at file creation; can't be done here !!
+
+				for _, n := range sobj {
+					child := obj.Children[n]
+					if !isValidFileName(child.Name(), true) {
+						continue
+					}
+					om = append(om, OutMap{
+						File:      FileDef{Name: child.Name(), IsDir: true},
+						Selection: []OutSelection{{Object: obj, Children: []int{n}}},
+					})
+				}
+
 				return
 			},
 		},
 		"PropertyName": {
-			Args: []ArgType{},
-			Func: func(args []Arg, sobj []int, sprop []string) (om []OutMap, err error) {
+			Args: []ArgType{ArgTypeString},
+			Func: func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
+				if len(sobj) > 0 {
+					return nil, errors.New("objects not supported")
+				}
+
+				ext := strings.ToLower(string(args[0].(ArgString)))
+
+				var format Format
+				var typ rbxfile.Type
+				switch ext {
+				case "bin":
+					format = FormatBin{}
+					typ = rbxfile.TypeBinaryString
+				case "lua":
+					format = FormatLua{}
+					typ = rbxfile.TypeProtectedString
+				case "txt":
+					format = FormatText{}
+					typ = rbxfile.TypeString
+				default:
+					return nil, errors.New("unsupported format")
+				}
+
+				for _, name := range sprop {
+					file := name + "." + ext
+					if !isValidFileName(file, false) {
+						continue
+					}
+					if obj.Properties[name].Type() != typ {
+						continue
+					}
+					sel := []OutSelection{{Object: obj, Values: []string{name}}}
+					if !format.CanEncode(sel) {
+						continue
+					}
+					om = append(om, OutMap{
+						File:      FileDef{Name: file, IsDir: false},
+						Selection: sel,
+					})
+				}
+
 				return
 			},
 		},
 		"Ignore": {
 			Args: []ArgType{},
-			Func: func(args []Arg, sobj []int, sprop []string) (om []OutMap, err error) {
+			Func: func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				om = []OutMap{
-					OutMap{
+					{
 						File: FileDef{}, // empty filename: ignore selected items
-						Selection: OutSelection{
-							Children:   sobj,
-							Properties: sprop,
+						Selection: []OutSelection{
+							{
+								Object:     obj,
+								Children:   sobj,
+								Properties: sprop,
+							},
 						},
 					},
 				}
@@ -418,29 +504,6 @@ var DefaultRuleFuncs = FuncDef{
 
 ////////////////////////////////////////////////////////////////
 
-type OutAction struct {
-	Depth     int
-	Selection OutMap
-}
-
-type InAction struct {
-	Depth     int
-	Selection InSelection
-}
-
-////////////////////////////////////////////////////////////////
-
-const (
-	ruleOpComment  = "#"
-	ruleOpArgOpen  = "("
-	ruleOpArgClose = ")"
-	ruleOpArgSep   = ","
-	ruleOpSep      = ":"
-
-	ruleWordOut = "out"
-	ruleWordIn  = "in"
-)
-
 type SyncType byte
 
 const (
@@ -456,21 +519,28 @@ const (
 )
 
 type ruleFunc struct {
-	SyncType SyncType
 	FuncType FuncType
 	Name     string
 	Args     []Arg
 }
 
-type ruleParser struct {
-	defs  FuncDef
-	r     io.Reader
-	err   error
-	line  int
-	funcs []ruleFunc
+type rulePair struct {
+	Depth    int
+	SyncType SyncType
+	Pattern  ruleFunc
+	Filter   ruleFunc
 }
 
-func trimSpace(s string) string {
+type ruleParser struct {
+	defs  *FuncDef
+	r     io.Reader
+	depth int
+	err   error
+	line  int
+	funcs []rulePair
+}
+
+func (*ruleParser) trimSpace(s string) string {
 	for i, r := range s {
 		if !unicode.IsSpace(r) {
 			return s[:i]
@@ -479,7 +549,7 @@ func trimSpace(s string) string {
 	return s
 }
 
-func ident(s string) string {
+func (*ruleParser) ident(s string) string {
 	for i, r := range s {
 		if ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') {
 			continue
@@ -498,7 +568,7 @@ func (err ErrRuleParser) Error() string {
 	return fmt.Sprintf("line %d: %s", err.Line, err.Err.Error())
 }
 
-func (d *ruleParser) parseRules() (rf []ruleFunc, err error) {
+func (d *ruleParser) parseRules() (rp []rulePair, err error) {
 	s := bufio.NewScanner(d.r)
 	s.Split(bufio.ScanLines)
 	d.line = 1
@@ -515,12 +585,14 @@ Error:
 		err = ErrRuleParser{Line: d.line, Err: d.err}
 		return
 	}
-	rf = d.funcs
+	rp = d.funcs
 	return
 }
 
 func (d *ruleParser) readLine(line string) {
-	line = trimSpace(line)
+	const ruleOpComment = "#"
+
+	line = d.trimSpace(line)
 	if len(line) == 0 {
 		// empty
 		return
@@ -533,13 +605,15 @@ func (d *ruleParser) readLine(line string) {
 }
 
 func (d *ruleParser) readRule(rule string) {
+	const ruleOpSep = ":"
+
 	var syncType SyncType
 	var patterns map[string][]ArgType
 	var filters map[string][]ArgType
 
-	typ := ident(rule)
+	typ := d.ident(rule)
 	switch typ {
-	case ruleWordOut:
+	case "out":
 		syncType = SyncOut
 		patterns = make(map[string][]ArgType, len(d.defs.OutPattern))
 		for name, def := range d.defs.OutPattern {
@@ -549,7 +623,7 @@ func (d *ruleParser) readRule(rule string) {
 		for name, def := range d.defs.OutFilter {
 			filters[name] = def.Args
 		}
-	case ruleWordIn:
+	case "in":
 		syncType = SyncIn
 		patterns = make(map[string][]ArgType, len(d.defs.InPattern))
 		for name, def := range d.defs.InPattern {
@@ -565,13 +639,11 @@ func (d *ruleParser) readRule(rule string) {
 	}
 	rule = rule[len(typ):]
 
-	rule = trimSpace(rule)
-	rule, rf := d.readFunc(rule, patterns)
-	rf.SyncType = syncType
-	rf.FuncType = Pattern
-	d.funcs = append(d.funcs, rf)
+	rule = d.trimSpace(rule)
+	rule, rfp := d.readFunc(rule, patterns)
+	rfp.FuncType = Pattern
 
-	rule = trimSpace(rule)
+	rule = d.trimSpace(rule)
 	if strings.HasPrefix(rule, ruleOpSep) {
 		rule = rule[len(ruleOpSep):]
 	} else {
@@ -579,13 +651,18 @@ func (d *ruleParser) readRule(rule string) {
 		return
 	}
 
-	rule = trimSpace(rule)
-	rule, rf = d.readFunc(rule, filters)
-	rf.SyncType = syncType
-	rf.FuncType = Filter
-	d.funcs = append(d.funcs, rf)
+	rule = d.trimSpace(rule)
+	rule, rff := d.readFunc(rule, filters)
+	rff.FuncType = Filter
 
-	rule = trimSpace(rule)
+	d.funcs = append(d.funcs, rulePair{
+		Depth:    d.depth,
+		SyncType: syncType,
+		Pattern:  rfp,
+		Filter:   rff,
+	})
+
+	rule = d.trimSpace(rule)
 	if len(rule) != 0 {
 		d.err = errors.New("unexpected characters beyond filter")
 		return
@@ -593,7 +670,11 @@ func (d *ruleParser) readRule(rule string) {
 }
 
 func (d *ruleParser) readFunc(rule string, args map[string][]ArgType) (left string, rf ruleFunc) {
-	rf.Name = ident(rule)
+	const ruleOpArgOpen = "("
+	const ruleOpArgClose = ")"
+	const ruleOpArgSep = ","
+
+	rf.Name = d.ident(rule)
 	if len(rf.Name) == 0 {
 		d.err = errors.New("empty function name")
 		return
@@ -637,12 +718,4 @@ func (d *ruleParser) readFunc(rule string, args map[string][]ArgType) (left stri
 		return
 	}
 	return rule[len(ruleOpArgClose):], rf
-}
-
-func ParseRules(r io.Reader) (rf []ruleFunc, err error) {
-	p := &ruleParser{
-		defs: DefaultRuleFuncs,
-		r:    r,
-	}
-	return p.parseRules()
 }

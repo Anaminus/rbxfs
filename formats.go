@@ -9,8 +9,7 @@ import (
 )
 
 type ErrFmtSelection struct {
-	Format    string
-	Selection OutSelection
+	Format string
 }
 
 func (err ErrFmtSelection) Error() string {
@@ -51,11 +50,10 @@ func (err ErrFmtDecode) Error() string {
 
 type Format interface {
 	Name() string
-	// Check receives amounts of objects, properties and values, and returns
-	// whether the format will be able to encode them.
-	Check(obj, prop, val int) bool
+	// CanEncode returns whether the selections can be encoded.
+	CanEncode(selections []OutSelection) bool
 	// Encode uses Selection sel to read data from obj, and encode it to a format written to w.
-	Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error
+	Encode(w io.Writer, selections []OutSelection) error
 	// Decode reads formatted data from r, and decodes it into objects,
 	// properties, and values, added to obj.
 	Decode(r io.Reader) (ItemSource, error)
@@ -68,21 +66,37 @@ type FormatRBXM struct {
 func (FormatRBXM) Name() string {
 	return "RBXM"
 }
-func (FormatRBXM) Check(obj, prop, val int) bool {
-	return obj >= 0 && prop == 0 && val == 0
-}
-func (f FormatRBXM) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
-	if !f.Check(len(sel.Children), len(sel.Properties), len(sel.Values)) {
-		return ErrFmtSelection{f.Name(), sel}
-	}
-	instances := make([]*rbxfile.Instance, len(sel.Children))
-	for i, v := range sel.Children {
-		if v < 0 || v >= len(obj.Children) {
-			return ErrFmtBounds{f.Name(), "child", i, v, len(obj.Children)}
+func (FormatRBXM) CanEncode(sel []OutSelection) bool {
+	for _, s := range sel {
+		if len(s.Properties) > 0 || len(s.Values) > 0 {
+			return false
 		}
-		instances[i] = obj.Children[v]
+	}
+	return true
+}
+func (f FormatRBXM) Encode(w io.Writer, selections []OutSelection) error {
+	if !f.CanEncode(selections) {
+		//ERROR:
+		return ErrFmtSelection{f.Name()}
+	}
+
+	n := 0
+	for _, s := range selections {
+		n += len(s.Children)
+	}
+
+	instances := make([]*rbxfile.Instance, 0, n)
+	for _, s := range selections {
+		for i, v := range s.Children {
+			if v < 0 || v >= len(s.Object.Children) {
+				//ERROR:
+				return ErrFmtBounds{f.Name(), "child", i, v, len(s.Object.Children)}
+			}
+			instances = append(instances, s.Object.Children[v])
+		}
 	}
 	if err := bin.SerializeModel(w, f.API, &rbxfile.Root{Instances: instances}); err != nil {
+		//ERROR:
 		return ErrFmtEncode{err}
 	}
 	return nil
@@ -103,10 +117,15 @@ type FormatRBXMX struct {
 func (FormatRBXMX) Name() string {
 	return "RBXMX"
 }
-func (FormatRBXMX) Check(obj, prop, val int) bool {
-	return obj >= 0 && prop == 0 && val == 0
+func (FormatRBXMX) CanEncode(sel []OutSelection) bool {
+	for _, s := range sel {
+		if len(s.Properties) > 0 || len(s.Values) > 0 {
+			return false
+		}
+	}
+	return true
 }
-func (FormatRBXMX) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
+func (FormatRBXMX) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
 func (FormatRBXMX) Decode(r io.Reader) (is ItemSource, err error) {
@@ -118,10 +137,15 @@ type FormatJSON struct{}
 func (FormatJSON) Name() string {
 	return "JSON"
 }
-func (FormatJSON) Check(obj, prop, val int) bool {
-	return obj == 0 && prop >= 0 && val == 0
+func (FormatJSON) CanEncode(sel []OutSelection) bool {
+	if len(sel) > 1 {
+		return false
+	} else if len(sel) == 1 && (len(sel[0].Children) > 0 || len(sel[0].Values) > 0) {
+		return false
+	}
+	return true
 }
-func (FormatJSON) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
+func (FormatJSON) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
 func (FormatJSON) Decode(r io.Reader) (is ItemSource, err error) {
@@ -133,10 +157,15 @@ type FormatXML struct{}
 func (FormatXML) Name() string {
 	return "XML"
 }
-func (FormatXML) Check(obj, prop, val int) bool {
-	return obj == 0 && prop >= 0 && val == 0
+func (FormatXML) CanEncode(sel []OutSelection) bool {
+	if len(sel) > 1 {
+		return false
+	} else if len(sel) == 1 && (len(sel[0].Children) > 0 || len(sel[0].Values) > 0) {
+		return false
+	}
+	return true
 }
-func (FormatXML) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
+func (FormatXML) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
 func (FormatXML) Decode(r io.Reader) (is ItemSource, err error) {
@@ -148,10 +177,16 @@ type FormatBin struct{}
 func (FormatBin) Name() string {
 	return "Bin"
 }
+func (FormatBin) CanEncode(sel []OutSelection) bool {
+	return len(sel) == 1 &&
+		len(sel[0].Children) == 0 &&
+		len(sel[0].Properties) == 0 &&
+		len(sel[0].Values) == 1
+}
 func (FormatBin) Check(obj, prop, val int) bool {
 	return obj == 0 && prop == 0 && val == 1
 }
-func (FormatBin) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
+func (FormatBin) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
 func (FormatBin) Decode(r io.Reader) (is ItemSource, err error) {
@@ -163,10 +198,13 @@ type FormatLua struct{}
 func (FormatLua) Name() string {
 	return "Lua"
 }
-func (FormatLua) Check(obj, prop, val int) bool {
-	return obj == 0 && prop == 0 && val == 1
+func (FormatLua) CanEncode(sel []OutSelection) bool {
+	return len(sel) == 1 &&
+		len(sel[0].Children) == 0 &&
+		len(sel[0].Properties) == 0 &&
+		len(sel[0].Values) == 1
 }
-func (FormatLua) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
+func (FormatLua) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
 func (FormatLua) Decode(r io.Reader) (is ItemSource, err error) {
@@ -178,10 +216,13 @@ type FormatText struct{}
 func (FormatText) Name() string {
 	return "Text"
 }
-func (FormatText) Check(obj, prop, val int) bool {
-	return obj == 0 && prop == 0 && val == 1
+func (FormatText) CanEncode(sel []OutSelection) bool {
+	return len(sel) == 1 &&
+		len(sel[0].Children) == 0 &&
+		len(sel[0].Properties) == 0 &&
+		len(sel[0].Values) == 1
 }
-func (FormatText) Encode(w io.Writer, obj *rbxfile.Instance, sel OutSelection) error {
+func (FormatText) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
 func (FormatText) Decode(r io.Reader) (is ItemSource, err error) {
