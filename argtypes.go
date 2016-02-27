@@ -15,6 +15,7 @@ type ArgString string
 
 func ArgTypeString(s string) (a Arg, n int, err error) {
 	v := []rune{}
+loop:
 	for n = 0; n < len(s); {
 		switch r, size := utf8.DecodeRuneInString(s[n:]); r {
 		case '\\':
@@ -27,7 +28,7 @@ func ArgTypeString(s string) (a Arg, n int, err error) {
 			n += size
 			v = append(v, r)
 		case ',', ')':
-			break
+			break loop
 		}
 	}
 	return ArgString(v), n, nil
