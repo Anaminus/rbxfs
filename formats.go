@@ -68,7 +68,7 @@ func (FormatRBXM) Name() string {
 }
 func (FormatRBXM) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
-		if len(s.Properties) > 0 || len(s.Values) > 0 {
+		if len(s.Properties) > 0 {
 			return false
 		}
 	}
@@ -119,7 +119,7 @@ func (FormatRBXMX) Name() string {
 }
 func (FormatRBXMX) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
-		if len(s.Properties) > 0 || len(s.Values) > 0 {
+		if len(s.Properties) > 0 {
 			return false
 		}
 	}
@@ -132,6 +132,50 @@ func (FormatRBXMX) Decode(r io.Reader) (is ItemSource, err error) {
 	return
 }
 
+type FormatRBXL struct {
+	API *rbxdump.API
+}
+
+func (FormatRBXL) Name() string {
+	return "RBXL"
+}
+func (FormatRBXL) CanEncode(sel []OutSelection) bool {
+	for _, s := range sel {
+		if len(s.Properties) > 0 {
+			return false
+		}
+	}
+	return true
+}
+func (f FormatRBXL) Encode(w io.Writer, selections []OutSelection) error {
+	return nil
+}
+func (f FormatRBXL) Decode(r io.Reader) (is ItemSource, err error) {
+	return
+}
+
+type FormatRBXLX struct {
+	API *rbxdump.API
+}
+
+func (FormatRBXLX) Name() string {
+	return "RBXLX"
+}
+func (FormatRBXLX) CanEncode(sel []OutSelection) bool {
+	for _, s := range sel {
+		if len(s.Properties) > 0 {
+			return false
+		}
+	}
+	return true
+}
+func (FormatRBXLX) Encode(w io.Writer, sel []OutSelection) error {
+	return nil
+}
+func (FormatRBXLX) Decode(r io.Reader) (is ItemSource, err error) {
+	return
+}
+
 type FormatJSON struct{}
 
 func (FormatJSON) Name() string {
@@ -140,7 +184,7 @@ func (FormatJSON) Name() string {
 func (FormatJSON) CanEncode(sel []OutSelection) bool {
 	if len(sel) > 1 {
 		return false
-	} else if len(sel) == 1 && (len(sel[0].Children) > 0 || len(sel[0].Values) > 0) {
+	} else if len(sel) == 1 && len(sel[0].Children) > 0 {
 		return false
 	}
 	return true
@@ -160,7 +204,7 @@ func (FormatXML) Name() string {
 func (FormatXML) CanEncode(sel []OutSelection) bool {
 	if len(sel) > 1 {
 		return false
-	} else if len(sel) == 1 && (len(sel[0].Children) > 0 || len(sel[0].Values) > 0) {
+	} else if len(sel) == 1 && len(sel[0].Children) > 0 {
 		return false
 	}
 	return true
@@ -180,8 +224,7 @@ func (FormatBin) Name() string {
 func (FormatBin) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&
 		len(sel[0].Children) == 0 &&
-		len(sel[0].Properties) == 0 &&
-		len(sel[0].Values) == 1
+		len(sel[0].Properties) == 1
 }
 func (FormatBin) Check(obj, prop, val int) bool {
 	return obj == 0 && prop == 0 && val == 1
@@ -201,8 +244,7 @@ func (FormatLua) Name() string {
 func (FormatLua) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&
 		len(sel[0].Children) == 0 &&
-		len(sel[0].Properties) == 0 &&
-		len(sel[0].Values) == 1
+		len(sel[0].Properties) == 1
 }
 func (FormatLua) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
@@ -219,8 +261,7 @@ func (FormatText) Name() string {
 func (FormatText) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&
 		len(sel[0].Children) == 0 &&
-		len(sel[0].Properties) == 0 &&
-		len(sel[0].Values) == 1
+		len(sel[0].Properties) == 1
 }
 func (FormatText) Encode(w io.Writer, sel []OutSelection) error {
 	return nil

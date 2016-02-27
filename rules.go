@@ -51,9 +51,6 @@ type OutSelection struct {
 	// A list of properties selected from a source. Each value is the name of
 	// a property.
 	Properties []string
-	// A list of property values selected from a source. Each value is the
-	// name of a property.
-	Values []string
 }
 
 // Defines a file.
@@ -114,6 +111,10 @@ func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (o
 		err = fmt.Errorf("pattern error: %s", err.Error())
 		return
 	}
+	if len(sobj) == 0 && len(sprop) == 0 {
+		return
+	}
+
 	om, err = filterFn.Func(pair.Filter.Args, obj, sobj, sprop)
 	if err != nil {
 		err = fmt.Errorf("filter error: %s", err.Error())
@@ -224,21 +225,28 @@ var DefaultRuleDefs = &FuncDef{
 			Args: []ArgType{ArgTypeClass},
 			Func: func(args []Arg, obj *rbxfile.Instance) (sobj []int, sprop []string, err error) {
 				class := args[0].(ArgClass)
-				if !class.Name.Any {
-					if class.NoSub {
-						if obj.ClassName != class.Name.Literal {
-							return
-						}
-					} else {
-						if !inherits(obj, class.Name.Literal) {
-							return
-						}
+				if class.Name.Any {
+					sobj = make([]int, len(obj.Children))
+					for i := range obj.Children {
+						sobj[i] = i
+					}
+					return
+				}
+
+				// if class.NoSub {
+				for i, child := range obj.Children {
+					if child.ClassName == class.Name.Literal {
+						sobj = append(sobj, i)
 					}
 				}
-				sobj = make([]int, len(obj.Children))
-				for i := range obj.Children {
-					sobj[i] = i
-				}
+				// } else {
+				// 	for i, child := range obj.Children {
+				// 		if inherits(child, class.Name.Literal) {
+				// 			sobj = append(sobj, i)
+				// 		}
+				// 	}
+				// }
+
 				return
 			},
 		},
@@ -249,15 +257,15 @@ var DefaultRuleDefs = &FuncDef{
 				prop := args[1].(ArgName)
 				typ := args[2].(ArgName)
 				if !class.Name.Any {
-					if class.NoSub {
-						if obj.ClassName != class.Name.Literal {
-							return
-						}
-					} else {
-						if !inherits(obj, class.Name.Literal) {
-							return
-						}
+					// if class.NoSub {
+					if obj.ClassName != class.Name.Literal {
+						return
 					}
+					// } else {
+					// 	if !inherits(obj, class.Name.Literal) {
+					// 		return
+					// 	}
+					// }
 				}
 				for name, t := range obj.Properties {
 					if prop.Any || name == prop.Literal {
@@ -277,23 +285,35 @@ var DefaultRuleDefs = &FuncDef{
 				name := string(args[0].(ArgString))
 				var format Format
 				switch ext := filepath.Ext(name); ext {
-				case "rbxm":
+				case ".rbxm":
 					format = FormatRBXM{}
-				case "rbxmx":
+				case ".rbxmx":
 					format = FormatRBXMX{}
-				case "json":
+				// case ".rbxl":
+				// format = FormatRBXL{}
+				// case ".rbxlx":
+				// format = FormatRBXLX{}
+				case ".json":
 					format = FormatJSON{}
-				case "xml":
+				case ".xml":
 					format = FormatXML{}
+				case ".bin":
+					format = FormatBin{}
+				case ".lua":
+					format = FormatLua{}
+				case ".txt":
+					format = FormatText{}
 				default:
-					return nil, errors.New("unsupported file extension")
+					return nil, errors.New("unsupported file extension for " + name)
 				}
 
 				sel := []OutSelection{{Object: obj, Children: sobj, Properties: sprop}}
 				if !format.CanEncode(sel) {
 					// ErrFormat{nobj, nprop, nval, Format}
+					// return
 					return nil, errors.New("selection not supported by format")
 				}
+
 				om = []OutMap{OutMap{File: FileDef{Name: name, IsDir: false}, Selection: sel}}
 				return
 			},
@@ -352,7 +372,7 @@ var DefaultRuleDefs = &FuncDef{
 					if obj.Properties[name].Type() != typ {
 						continue
 					}
-					sel := []OutSelection{{Object: obj, Values: []string{name}}}
+					sel := []OutSelection{{Object: obj, Properties: []string{name}}}
 					if !format.CanEncode(sel) {
 						continue
 					}
@@ -543,10 +563,10 @@ type ruleParser struct {
 func (*ruleParser) trimSpace(s string) string {
 	for i, r := range s {
 		if !unicode.IsSpace(r) {
-			return s[:i]
+			return s[i:]
 		}
 	}
-	return s
+	return ""
 }
 
 func (*ruleParser) ident(s string) string {
@@ -579,7 +599,9 @@ func (d *ruleParser) parseRules() (rp []rulePair, err error) {
 		}
 		d.line++
 	}
-	d.err = s.Err()
+	if s.Err() != nil {
+		d.err = s.Err()
+	}
 Error:
 	if d.err != nil {
 		err = ErrRuleParser{Line: d.line, Err: d.err}
@@ -641,18 +663,25 @@ func (d *ruleParser) readRule(rule string) {
 
 	rule = d.trimSpace(rule)
 	rule, rfp := d.readFunc(rule, patterns)
+	if d.err != nil {
+		return
+	}
 	rfp.FuncType = Pattern
 
 	rule = d.trimSpace(rule)
 	if strings.HasPrefix(rule, ruleOpSep) {
 		rule = rule[len(ruleOpSep):]
 	} else {
+		fmt.Printf("CHECK RULE %q\n", rule)
 		d.err = fmt.Errorf("bad syntax: expected %q", ruleOpSep)
 		return
 	}
 
 	rule = d.trimSpace(rule)
 	rule, rff := d.readFunc(rule, filters)
+	if d.err != nil {
+		return
+	}
 	rff.FuncType = Filter
 
 	d.funcs = append(d.funcs, rulePair{
@@ -703,7 +732,7 @@ func (d *ruleParser) readFunc(rule string, args map[string][]ArgType) (left stri
 
 		if i < len(argts)-1 {
 			if strings.HasPrefix(rule, ruleOpArgClose) {
-				d.err = fmt.Errorf("function %s: expected %d arguments, got %d", rf.Name, len(argts), i)
+				d.err = fmt.Errorf("function %s: expected %d arguments, got %d", rf.Name, len(argts), i+1)
 				return
 			}
 			if !strings.HasPrefix(rule, ruleOpArgSep) {
@@ -713,6 +742,7 @@ func (d *ruleParser) readFunc(rule string, args map[string][]ArgType) (left stri
 			rule = rule[len(ruleOpArgSep):]
 		}
 	}
+
 	if !strings.HasPrefix(rule, ruleOpArgClose) {
 		d.err = fmt.Errorf("function %s: bad syntax: expected %q", rf.Name, ruleOpArgClose)
 		return
