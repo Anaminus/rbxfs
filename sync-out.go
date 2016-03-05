@@ -573,7 +573,7 @@ func SyncOutReadRepo(opt *Options) error {
 
 	fmt.Println("RULES:", len(rules))
 	for _, r := range rules {
-		fmt.Printf("\t%#v\n", r)
+		fmt.Printf("\t%s\n", r)
 	}
 
 	places := getPlacesInRepo(opt.Repo)
