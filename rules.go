@@ -701,7 +701,6 @@ func (d *ruleParser) readRule(rule string) {
 	if strings.HasPrefix(rule, ruleOpSep) {
 		rule = rule[len(ruleOpSep):]
 	} else {
-		fmt.Printf("CHECK RULE %q\n", rule)
 		d.err = fmt.Errorf("bad syntax: expected %q", ruleOpSep)
 		return
 	}
