@@ -560,15 +560,6 @@ type ruleParser struct {
 	funcs []rulePair
 }
 
-func (*ruleParser) trimSpace(s string) string {
-	for i, r := range s {
-		if !unicode.IsSpace(r) {
-			return s[i:]
-		}
-	}
-	return ""
-}
-
 func (*ruleParser) ident(s string) string {
 	for i, r := range s {
 		if ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') {
@@ -614,7 +605,7 @@ Error:
 func (d *ruleParser) readLine(line string) {
 	const ruleOpComment = "#"
 
-	line = d.trimSpace(line)
+	line = strings.TrimLeftFunc(line, unicode.IsSpace)
 	if len(line) == 0 {
 		// empty
 		return
@@ -661,14 +652,14 @@ func (d *ruleParser) readRule(rule string) {
 	}
 	rule = rule[len(typ):]
 
-	rule = d.trimSpace(rule)
+	rule = strings.TrimLeftFunc(rule, unicode.IsSpace)
 	rule, rfp := d.readFunc(rule, patterns)
 	if d.err != nil {
 		return
 	}
 	rfp.FuncType = Pattern
 
-	rule = d.trimSpace(rule)
+	rule = strings.TrimLeftFunc(rule, unicode.IsSpace)
 	if strings.HasPrefix(rule, ruleOpSep) {
 		rule = rule[len(ruleOpSep):]
 	} else {
@@ -677,7 +668,7 @@ func (d *ruleParser) readRule(rule string) {
 		return
 	}
 
-	rule = d.trimSpace(rule)
+	rule = strings.TrimLeftFunc(rule, unicode.IsSpace)
 	rule, rff := d.readFunc(rule, filters)
 	if d.err != nil {
 		return
@@ -691,7 +682,7 @@ func (d *ruleParser) readRule(rule string) {
 		Filter:   rff,
 	})
 
-	rule = d.trimSpace(rule)
+	rule = strings.TrimLeftFunc(rule, unicode.IsSpace)
 	if len(rule) != 0 {
 		d.err = errors.New("unexpected characters beyond filter")
 		return
