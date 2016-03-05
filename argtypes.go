@@ -3,6 +3,7 @@ package rbxfs
 import (
 	"errors"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -37,7 +38,7 @@ loop:
 			break loop
 		}
 	}
-	return ArgString(v), n, nil
+	return ArgString(strings.TrimSpace(string(v))), n, nil
 }
 
 ////////////////////////////////////////////////////////////////
@@ -54,15 +55,42 @@ func (a ArgName) String() string {
 	return a.Literal
 }
 
+func indexFunc(s string, f func(rune) bool, truth bool) int {
+	start := 0
+	for start < len(s) {
+		wid := 1
+		r := rune(s[start])
+		if r >= utf8.RuneSelf {
+			r, wid = utf8.DecodeRuneInString(s[start:])
+		}
+		if f(r) == truth {
+			break
+		}
+		start += wid
+	}
+	return start
+}
+
 func ArgTypeName(s string) (a Arg, n int, err error) {
 	arg := ArgName{}
-	if strings.HasPrefix(s, "*,") || strings.HasPrefix(s, "*)") {
-		arg.Any = true
-		return arg, 1, err
+
+	n = indexFunc(s, unicode.IsSpace, false)
+	s = s[n:]
+	if len(s) == 0 {
+		return arg, n, nil
 	}
-	v, n, err := ArgTypeString(s)
+
+	if s[0] == '*' {
+		nn := indexFunc(s[1:], unicode.IsSpace, false)
+		if s[1+nn] == ',' || s[1+nn] == ')' {
+			arg.Any = true
+			return arg, n + 1 + nn, nil
+		}
+	}
+
+	v, nn, err := ArgTypeString(s)
 	arg.Literal = string(v.(ArgString))
-	return arg, n, err
+	return arg, n + nn, err
 }
 
 ////////////////////////////////////////////////////////////////
@@ -82,11 +110,19 @@ func (a ArgClass) String() string {
 
 func ArgTypeClass(s string) (a Arg, n int, err error) {
 	arg := ArgClass{}
-	if strings.HasPrefix(s, "@") {
-		arg.NoSub = true
-		s = s[1:]
-		n++
+
+	n = indexFunc(s, unicode.IsSpace, false)
+	s = s[n:]
+	if len(s) == 0 {
+		return arg, n, nil
 	}
+
+	if s[0] == '@' {
+		arg.NoSub = true
+		n++
+		s = s[n:]
+	}
+
 	v, nn, err := ArgTypeName(s)
 	arg.Name = v.(ArgName)
 	return arg, n + nn, err
