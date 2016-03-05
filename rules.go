@@ -526,12 +526,32 @@ var DefaultRuleDefs = &FuncDef{
 
 type SyncType byte
 
+func (s SyncType) String() string {
+	switch s {
+	case SyncIn:
+		return "in"
+	case SyncOut:
+		return "out"
+	}
+	return ""
+}
+
 const (
 	SyncOut SyncType = iota
 	SyncIn
 )
 
 type FuncType byte
+
+func (f FuncType) String() string {
+	switch f {
+	case Pattern:
+		return "pattern"
+	case Filter:
+		return "filter"
+	}
+	return ""
+}
 
 const (
 	Pattern FuncType = iota
@@ -549,6 +569,24 @@ type rulePair struct {
 	SyncType SyncType
 	Pattern  ruleFunc
 	Filter   ruleFunc
+}
+
+func (r rulePair) String() string {
+	args := func(args []Arg) string {
+		var s []string
+		for _, arg := range args {
+			s = append(s, arg.String())
+		}
+		return strings.Join(s, ", ")
+	}
+	return fmt.Sprintf("%d: %s %s(%s) : %s(%s)",
+		r.Depth,
+		r.SyncType,
+		r.Pattern.Name,
+		args(r.Pattern.Args),
+		r.Filter.Name,
+		args(r.Filter.Args),
+	)
 }
 
 type ruleParser struct {
