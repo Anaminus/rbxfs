@@ -6,12 +6,18 @@ import (
 	"unicode/utf8"
 )
 
-type Arg interface{}
+type Arg interface {
+	String() string
+}
 type ArgType func(s string) (Arg, int, error)
 
 ////////////////////////////////////////////////////////////////
 
 type ArgString string
+
+func (a ArgString) String() string {
+	return string(a)
+}
 
 func ArgTypeString(s string) (a Arg, n int, err error) {
 	v := []rune{}
@@ -41,6 +47,13 @@ type ArgName struct {
 	Literal string
 }
 
+func (a ArgName) String() string {
+	if a.Any {
+		return "*"
+	}
+	return a.Literal
+}
+
 func ArgTypeName(s string) (a Arg, n int, err error) {
 	arg := ArgName{}
 	if strings.HasPrefix(s, "*,") || strings.HasPrefix(s, "*)") {
@@ -59,6 +72,14 @@ type ArgClass struct {
 	NoSub bool
 }
 
+func (a ArgClass) String() string {
+	s := a.Name.String()
+	if a.NoSub {
+		s = "@" + s
+	}
+	return s
+}
+
 func ArgTypeClass(s string) (a Arg, n int, err error) {
 	arg := ArgClass{}
 	if strings.HasPrefix(s, "@") {
@@ -74,6 +95,10 @@ func ArgTypeClass(s string) (a Arg, n int, err error) {
 ////////////////////////////////////////////////////////////////
 
 type ArgFileName string
+
+func (a ArgFileName) String() string {
+	return string(a)
+}
 
 func (arg ArgFileName) Match(name string) bool {
 	if arg == "*" {
