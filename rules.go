@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/robloxapi/rbxdump"
 	"github.com/robloxapi/rbxfile"
 	"io"
 	"os"
@@ -14,19 +15,19 @@ import (
 
 type OutPattern struct {
 	Args []ArgType
-	Func func(args []Arg, obj *rbxfile.Instance) (sobj []int, sprop []string, err error)
+	Func func(opt *Options, args []Arg, obj *rbxfile.Instance) (sobj []int, sprop []string, err error)
 }
 type OutFilter struct {
 	Args []ArgType
-	Func func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error)
+	Func func(opt *Options, args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error)
 }
 type InPattern struct {
 	Args []ArgType
-	Func func(args []Arg, path string) (sfile []string, err error)
+	Func func(opt *Options, args []Arg, path string) (sfile []string, err error)
 }
 type InFilter struct {
 	Args []ArgType
-	Func func(args []Arg, im []InMap) (is []InSelection, err error)
+	Func func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error)
 }
 
 type OutAction struct {
@@ -106,7 +107,7 @@ func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (o
 		return
 	}
 
-	sobj, sprop, err := patternFn.Func(pair.Pattern.Args, obj)
+	sobj, sprop, err := patternFn.Func(opt, pair.Pattern.Args, obj)
 	if err != nil {
 		err = fmt.Errorf("pattern error: %s", err.Error())
 		return
@@ -115,7 +116,7 @@ func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (o
 		return
 	}
 
-	om, err = filterFn.Func(pair.Filter.Args, obj, sobj, sprop)
+	om, err = filterFn.Func(opt, pair.Filter.Args, obj, sobj, sprop)
 	if err != nil {
 		err = fmt.Errorf("filter error: %s", err.Error())
 	}
@@ -139,7 +140,7 @@ func (fd FuncDef) CallIn(opt *Options, pair rulePair, path string) (im []InMap, 
 		return
 	}
 
-	sfile, err := patternFn.Func(pair.Pattern.Args, path)
+	sfile, err := patternFn.Func(opt, pair.Pattern.Args, path)
 	if err != nil {
 		err = fmt.Errorf("pattern error: %s", err.Error())
 		return
@@ -182,19 +183,22 @@ func (fd FuncDef) CallIn(opt *Options, pair rulePair, path string) (im []InMap, 
 		im[i].File = name
 	}
 
-	is, err = filterFn.Func(pair.Filter.Args, im)
+	is, err = filterFn.Func(opt, pair.Filter.Args, im)
 	if err != nil {
 		err = fmt.Errorf("filter error: %s", err.Error())
 	}
 	return
 }
 
-func inherits(obj *rbxfile.Instance, class string) bool {
-	for obj != nil {
-		if obj.ClassName == class {
+func inherits(api *rbxdump.API, obj *rbxfile.Instance, className string) bool {
+	if api == nil {
+		return obj.ClassName == className
+	}
+	for class, ok := api.Classes[obj.ClassName]; ok; {
+		if class.Name == className {
 			return true
 		}
-		obj = obj.Parent()
+		class, ok = api.Classes[class.Superclass]
 	}
 	return false
 }
@@ -223,7 +227,7 @@ var DefaultRuleDefs = &FuncDef{
 	OutPattern: map[string]OutPattern{
 		"Child": {
 			Args: []ArgType{ArgTypeClass},
-			Func: func(args []Arg, obj *rbxfile.Instance) (sobj []int, sprop []string, err error) {
+			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance) (sobj []int, sprop []string, err error) {
 				class := args[0].(ArgClass)
 				if class.Name.Any {
 					sobj = make([]int, len(obj.Children))
@@ -233,40 +237,36 @@ var DefaultRuleDefs = &FuncDef{
 					return
 				}
 
-				// if class.NoSub {
+				api := opt.API
+				if class.NoSub {
+					api = nil
+				}
 				for i, child := range obj.Children {
-					if child.ClassName == class.Name.Literal {
+					if inherits(api, child, class.Name.Literal) {
 						sobj = append(sobj, i)
 					}
 				}
-				// } else {
-				// 	for i, child := range obj.Children {
-				// 		if inherits(child, class.Name.Literal) {
-				// 			sobj = append(sobj, i)
-				// 		}
-				// 	}
-				// }
 
 				return
 			},
 		},
 		"Property": {
 			Args: []ArgType{ArgTypeClass, ArgTypeName, ArgTypeName},
-			Func: func(args []Arg, obj *rbxfile.Instance) (sobj []int, sprop []string, err error) {
+			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance) (sobj []int, sprop []string, err error) {
 				class := args[0].(ArgClass)
 				prop := args[1].(ArgName)
 				typ := args[2].(ArgName)
+
 				if !class.Name.Any {
-					// if class.NoSub {
-					if obj.ClassName != class.Name.Literal {
+					api := opt.API
+					if class.NoSub {
+						api = nil
+					}
+					if !inherits(api, obj, class.Name.Literal) {
 						return
 					}
-					// } else {
-					// 	if !inherits(obj, class.Name.Literal) {
-					// 		return
-					// 	}
-					// }
 				}
+
 				for name, t := range obj.Properties {
 					if prop.Any || name == prop.Literal {
 						if typ.Any || strings.ToLower(t.Type().String()) == strings.ToLower(typ.Literal) {
@@ -281,7 +281,7 @@ var DefaultRuleDefs = &FuncDef{
 	OutFilter: map[string]OutFilter{
 		"File": {
 			Args: []ArgType{ArgTypeString},
-			Func: func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
+			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				name := string(args[0].(ArgString))
 				var format Format
 				switch ext := filepath.Ext(name); ext {
@@ -320,7 +320,7 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"Directory": {
 			Args: []ArgType{},
-			Func: func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
+			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				if len(sprop) > 0 {
 					return nil, errors.New("properties not supported")
 				}
@@ -341,7 +341,7 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"PropertyName": {
 			Args: []ArgType{ArgTypeString},
-			Func: func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
+			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				if len(sobj) > 0 {
 					return nil, errors.New("objects not supported")
 				}
@@ -387,7 +387,7 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"Ignore": {
 			Args: []ArgType{},
-			Func: func(args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
+			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				om = []OutMap{
 					{
 						File: FileDef{}, // empty filename: ignore selected items
@@ -407,7 +407,7 @@ var DefaultRuleDefs = &FuncDef{
 	InPattern: map[string]InPattern{
 		"File": {
 			Args: []ArgType{ArgTypeFileName},
-			Func: func(args []Arg, path string) (sfile []string, err error) {
+			Func: func(opt *Options, args []Arg, path string) (sfile []string, err error) {
 				return
 			},
 		},
@@ -415,7 +415,7 @@ var DefaultRuleDefs = &FuncDef{
 	InFilter: map[string]InFilter{
 		"Children": {
 			Args: []ArgType{},
-			Func: func(args []Arg, im []InMap) (is []InSelection, err error) {
+			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
 				for _, m := range im {
 					if len(m.Source.Properties) > 0 ||
 						len(m.Source.Values) > 0 {
@@ -438,7 +438,7 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"Properties": {
 			Args: []ArgType{},
-			Func: func(args []Arg, im []InMap) (is []InSelection, err error) {
+			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
 				for _, m := range im {
 					if len(m.Source.Children) > 0 ||
 						len(m.Source.Values) > 0 {
@@ -463,7 +463,7 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"Property": {
 			Args: []ArgType{ArgTypeString},
-			Func: func(args []Arg, im []InMap) (is []InSelection, err error) {
+			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
 				name := string(args[0].(ArgString))
 				if len(im) != 1 {
 					// error: must match exactly one file
@@ -487,7 +487,7 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"PropertyName": {
 			Args: []ArgType{},
-			Func: func(args []Arg, im []InMap) (is []InSelection, err error) {
+			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
 				for _, m := range im {
 					if len(m.Source.Children) > 0 ||
 						len(m.Source.Properties) > 0 ||
@@ -508,7 +508,7 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"Ignore": {
 			Args: []ArgType{},
-			Func: func(args []Arg, im []InMap) (is []InSelection, err error) {
+			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
 				is = make([]InSelection, len(im))
 				for i, m := range im {
 					is[i] = InSelection{
