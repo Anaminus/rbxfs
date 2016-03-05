@@ -30,6 +30,7 @@ loop:
 			if n >= len(s) {
 				return nil, n, errors.New("reached end-of-line while parsing escape")
 			}
+			r, size = utf8.DecodeRuneInString(s[n:])
 			fallthrough
 		default:
 			n += size
