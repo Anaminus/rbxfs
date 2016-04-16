@@ -777,3 +777,52 @@ func (d *ruleParser) readFunc(rule string, args map[string][]ArgType) (left stri
 	}
 	return rule[len(ruleOpArgClose):], rf
 }
+
+func parseRuleFile(opt *Options, depth int, path string) ([]rulePair, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	p := &ruleParser{
+		defs:  opt.RuleDefs,
+		r:     f,
+		depth: depth,
+	}
+	if p.defs == nil {
+		p.defs = DefaultRuleDefs
+	}
+	return p.parseRules()
+}
+
+func filterRuleType(rules []rulePair, typ SyncType) (out []rulePair) {
+	for _, rule := range rules {
+		if rule.SyncType == typ {
+			out = append(out, rule)
+		}
+	}
+	return
+}
+
+func getStdRules(opt *Options) (rules []rulePair, err error) {
+	r, err := parseRuleFile(opt, 1, globalRulePath())
+	if err != nil {
+		//ERROR:
+		fmt.Println("global rules:", err)
+	} else {
+		rules = append(rules, r...)
+	}
+
+	r, err = parseRuleFile(opt, 2, projectRulePath(opt.Repo))
+	if err != nil {
+		//ERROR:
+		fmt.Println("project rules:", err)
+	} else {
+		rules = append(rules, r...)
+	}
+
+	rules = filterRuleType(rules, SyncOut)
+
+	return
+}
