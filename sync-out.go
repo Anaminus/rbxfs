@@ -126,7 +126,7 @@ func decodePlaceFile(name string, api *rbxapi.API) (root *rbxfile.Root, err erro
 	return nil, errors.New("unsupported file type for " + name)
 }
 
-func syncOutReadPlace(opt *Options, place string, dir string, rules []rulePair) (root *rbxfile.Root, actions []OutAction, err error) {
+func syncOutReadPlace(opt *Options, place string, rules []rulePair) (root *rbxfile.Root, actions []OutAction, err error) {
 	root, err = decodePlaceFile(filepath.Join(opt.Repo, place), opt.API)
 	if err != nil {
 		//ERROR:
@@ -138,7 +138,7 @@ func syncOutReadPlace(opt *Options, place string, dir string, rules []rulePair) 
 		datamodel.AddChildAt(i, obj)
 	}
 
-	actions, err = syncOutReadObject(opt, datamodel, []string{dir}, rules)
+	actions, err = syncOutReadObject(opt, datamodel, []string{}, rules)
 
 	// for _, obj := range root.Instances {
 	// 	oa, err := syncOutReadObject(opt, obj, []string{dir}, rules)
@@ -502,7 +502,7 @@ func SyncOutReadRepo(opt *Options) error {
 	actions := make([][]OutAction, len(places))
 	for i, place := range places {
 		out[i] = getOutDir(place)
-		root, a, err := syncOutReadPlace(opt, place, out[i], rules)
+		root, a, err := syncOutReadPlace(opt, place, rules)
 		if err != nil {
 			//ERROR:
 			fmt.Println("ERROR", err)
