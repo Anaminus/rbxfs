@@ -483,8 +483,7 @@ func getOutDir(place string) string {
 }
 
 func SyncOutReadRepo(opt *Options) error {
-	repo := opt.Repo
-	if !pathIsRepo(repo) {
+	if !pathIsRepo(opt.Repo) {
 		//ERROR:
 		return errors.New("not a repo")
 	}
