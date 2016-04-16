@@ -19,8 +19,7 @@ func syncOutReadObject(opt *Options, obj *rbxfile.Instance, dir []string, rules 
 		defs = DefaultRuleDefs
 	}
 
-	children := []int{}
-	names := []string{}
+	children := map[int]string{}
 	for _, pair := range rules {
 		om, err := defs.CallOut(opt, pair, obj)
 		if err != nil {
@@ -29,10 +28,10 @@ func syncOutReadObject(opt *Options, obj *rbxfile.Instance, dir []string, rules 
 		}
 		for _, m := range om {
 			if m.File.IsDir {
+				// Scan for mappings of child objects to directories.
 				for _, s := range m.Selection {
 					if s.Object == obj && len(s.Children) == 1 && s.Children[0] < len(obj.Children) {
-						children = append(children, s.Children[0])
-						names = append(names, m.File.Name)
+						children[s.Children[0]] = m.File.Name
 					}
 				}
 			}
@@ -44,8 +43,18 @@ func syncOutReadObject(opt *Options, obj *rbxfile.Instance, dir []string, rules 
 		}
 	}
 
-	for i, index := range children {
-		name := names[i]
+	sorted := make([]int, len(children))
+	{
+		i := 0
+		for index := range children {
+			sorted[i] = index
+			i++
+		}
+	}
+	sort.Ints(sorted)
+
+	for _, index := range sorted {
+		name := children[index]
 		child := obj.Children[index]
 		subdir := make([]string, len(dir)+1)
 		copy(subdir, dir)
