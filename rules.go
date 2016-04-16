@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/robloxapi/rbxdump"
+	"github.com/robloxapi/rbxapi"
 	"github.com/robloxapi/rbxfile"
 	"io"
 	"os"
@@ -190,7 +190,7 @@ func (fd FuncDef) CallIn(opt *Options, pair rulePair, path string) (im []InMap, 
 	return
 }
 
-func inherits(api *rbxdump.API, obj *rbxfile.Instance, className string) bool {
+func inherits(api *rbxapi.API, obj *rbxfile.Instance, className string) bool {
 	if api == nil {
 		return obj.ClassName == className
 	}

@@ -3,7 +3,7 @@ package rbxfs
 import (
 	"errors"
 	"fmt"
-	"github.com/robloxapi/rbxdump"
+	"github.com/robloxapi/rbxapi"
 	"github.com/robloxapi/rbxfile"
 	"github.com/robloxapi/rbxfile/bin"
 	"github.com/robloxapi/rbxfile/xml"
@@ -74,7 +74,7 @@ func syncOutReadObject(opt *Options, obj *rbxfile.Instance, dir []string, rules 
 	return actions, nil
 }
 
-func decodePlaceFile(name string, api *rbxdump.API) (root *rbxfile.Root, err error) {
+func decodePlaceFile(name string, api *rbxapi.API) (root *rbxfile.Root, err error) {
 	model := false
 	switch ext := filepath.Ext(name); ext {
 	case ".rbxm", ".rbxmx":
