@@ -7,6 +7,7 @@ import (
 	"github.com/robloxapi/rbxapi"
 	"github.com/robloxapi/rbxfile"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,13 @@ type InPattern struct {
 }
 type InFilter struct {
 	Args []ArgType
-	Func func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error)
+	Func func(opt *Options, args []Arg, sm []SourceMap) (is []InSelection, err error)
+}
+
+// Defines a file.
+type FileDef struct {
+	Name  string
+	IsDir bool
 }
 
 type OutAction struct {
@@ -54,15 +61,21 @@ type OutSelection struct {
 	Properties []string
 }
 
-// Defines a file.
-type FileDef struct {
-	Name  string
-	IsDir bool
+type InAction struct {
+	Depth     int
+	Dir       []string
+	Selection []InSelection
 }
 
-type InMap struct {
-	File   string
-	Source ItemSource
+type SourceMap struct {
+	// The name of the file from which the source was derived.
+	File string
+	SourceCacheItem
+}
+
+type SourceCacheItem struct {
+	IsDir  bool
+	Source *ItemSource
 }
 
 // a source of items
@@ -73,8 +86,12 @@ type ItemSource struct {
 	Values []rbxfile.Value
 }
 
+// Maps a file name to an ItemSource. Name is relative to top directory of
+// place.
+type SourceCache map[string]SourceCacheItem
+
 type InSelection struct {
-	File       string         // select items from source associated with named file
+	File       string         // select file name matching SourceMap.File
 	Ignore     bool           // ignore associated file
 	Children   []int          // add nth child to object
 	Properties []string       // add named property to object
@@ -123,7 +140,8 @@ func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (o
 	return
 }
 
-func (fd FuncDef) CallIn(opt *Options, pair rulePair, path string) (im []InMap, is []InSelection, err error) {
+// path: relative to opt.Repo
+func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dir string) (is []InSelection, err error) {
 	if pair.SyncType != SyncIn {
 		err = errors.New("expected sync-in function pair")
 		return
@@ -140,14 +158,19 @@ func (fd FuncDef) CallIn(opt *Options, pair rulePair, path string) (im []InMap, 
 		return
 	}
 
-	sfile, err := patternFn.Func(opt, pair.Pattern.Args, path)
+	sfile, err := patternFn.Func(opt, pair.Pattern.Args, dir)
 	if err != nil {
 		err = fmt.Errorf("pattern error: %s", err.Error())
 		return
 	}
 
-	im = make([]InMap, len(sfile))
+	sm := make([]SourceMap, len(sfile))
 	for i, name := range sfile {
+		relname := filepath.Join(dir, name)
+		if _, ok := cache[relname]; ok {
+			continue
+		}
+
 		var format Format
 		switch ext := filepath.Ext(name); ext {
 		case ".rbxm":
@@ -172,22 +195,60 @@ func (fd FuncDef) CallIn(opt *Options, pair rulePair, path string) (im []InMap, 
 			//error: pattern selected file with unsupported format
 		}
 
-		r, err := os.Open(name)
+		r, err := os.Open(filepath.Join(opt.Repo, relname))
 		if err != nil {
 			//error?: cannot open file
 		}
-		im[i].Source, err = format.Decode(r)
+		defer r.Close()
+		stat, err := r.Stat()
 		if err != nil {
-			//error?: error decoding file
+			//error?: cannot open file
 		}
-		im[i].File = name
+
+		scItem := SourceCacheItem{IsDir: stat.IsDir()}
+		if scItem.IsDir {
+			className, err := readClassNameFile(filepath.Join(opt.Repo, dir, name))
+			if err != nil {
+				//ERROR: ignore directory?
+			}
+			obj := rbxfile.NewInstance(className, nil)
+			obj.SetName(name)
+			scItem.Source = &ItemSource{Children: []*rbxfile.Instance{obj}}
+		} else {
+			scItem.Source, err = format.Decode(r)
+			if err != nil {
+				//error?: error decoding file
+			}
+		}
+
+		cache[relname] = scItem
+		sm[i] = SourceMap{File: name, SourceCacheItem: scItem}
 	}
 
-	is, err = filterFn.Func(opt, pair.Filter.Args, im)
+	is, err = filterFn.Func(opt, pair.Filter.Args, sm)
 	if err != nil {
 		err = fmt.Errorf("filter error: %s", err.Error())
 	}
 	return
+}
+
+const classNameFile = "ClassName"
+const maxClassNameLength = 1 << 10
+
+func readClassNameFile(dir string) (className string, err error) {
+	name := filepath.Join(dir, classNameFile)
+	stat, err := os.Stat(name)
+	if err != nil {
+		return "", err
+	}
+	if stat.Size() > maxClassNameLength {
+		return "", errors.New("file too large")
+	}
+	b, err := ioutil.ReadFile(name)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func inherits(api *rbxapi.API, obj *rbxfile.Instance, className string) bool {
@@ -398,16 +459,16 @@ var DefaultRuleDefs = &FuncDef{
 	InFilter: map[string]InFilter{
 		"Children": {
 			Args: []ArgType{},
-			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
-				for _, m := range im {
+			Func: func(opt *Options, args []Arg, sm []SourceMap) (is []InSelection, err error) {
+				for _, m := range sm {
 					if len(m.Source.Properties) > 0 ||
 						len(m.Source.Values) > 0 {
 						// error: source not compatible with function
 						return
 					}
 				}
-				is = make([]InSelection, len(im))
-				for i, m := range im {
+				is = make([]InSelection, len(sm))
+				for i, m := range sm {
 					is[i] = InSelection{
 						File:     m.File,
 						Children: make([]int, len(m.Source.Children)),
@@ -421,16 +482,16 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"Properties": {
 			Args: []ArgType{},
-			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
-				for _, m := range im {
+			Func: func(opt *Options, args []Arg, sm []SourceMap) (is []InSelection, err error) {
+				for _, m := range sm {
 					if len(m.Source.Children) > 0 ||
 						len(m.Source.Values) > 0 {
 						// error: source not compatible with function
 						return
 					}
 				}
-				is = make([]InSelection, len(im))
-				for i, m := range im {
+				is = make([]InSelection, len(sm))
+				for i, m := range sm {
 					is[i] = InSelection{
 						File:       m.File,
 						Properties: make([]string, len(m.Source.Properties)),
@@ -446,13 +507,13 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"Property": {
 			Args: []ArgType{ArgTypeString},
-			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
+			Func: func(opt *Options, args []Arg, sm []SourceMap) (is []InSelection, err error) {
 				name := string(args[0].(ArgString))
-				if len(im) != 1 {
+				if len(sm) != 1 {
 					// error: must match exactly one file
 					return
 				}
-				m := im[0]
+				m := sm[0]
 				if len(m.Source.Children) > 0 ||
 					len(m.Source.Properties) > 0 ||
 					len(m.Source.Values) != 1 {
@@ -470,8 +531,8 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"PropertyName": {
 			Args: []ArgType{},
-			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
-				for _, m := range im {
+			Func: func(opt *Options, args []Arg, sm []SourceMap) (is []InSelection, err error) {
+				for _, m := range sm {
 					if len(m.Source.Children) > 0 ||
 						len(m.Source.Properties) > 0 ||
 						len(m.Source.Values) != 1 {
@@ -479,8 +540,8 @@ var DefaultRuleDefs = &FuncDef{
 						return
 					}
 				}
-				is = make([]InSelection, len(im))
-				for i, m := range im {
+				is = make([]InSelection, len(sm))
+				for i, m := range sm {
 					is[i] = InSelection{
 						File:   m.File,
 						Values: map[string]int{filepath.Base(m.File): 0},
@@ -491,9 +552,9 @@ var DefaultRuleDefs = &FuncDef{
 		},
 		"Ignore": {
 			Args: []ArgType{},
-			Func: func(opt *Options, args []Arg, im []InMap) (is []InSelection, err error) {
-				is = make([]InSelection, len(im))
-				for i, m := range im {
+			Func: func(opt *Options, args []Arg, sm []SourceMap) (is []InSelection, err error) {
+				is = make([]InSelection, len(sm))
+				for i, m := range sm {
 					is[i] = InSelection{
 						File:   m.File,
 						Ignore: true,
