@@ -451,15 +451,15 @@ func syncOutAnalyzeActions(actions []OutAction) []OutAction {
 	return actions
 }
 
-func syncOutVerifyActions(opt *Options, place, out string, root *rbxfile.Root, actions []OutAction) error {
+func syncOutVerifyActions(opt *Options, place, dir string, root *rbxfile.Root, actions []OutAction) error {
 	return nil
 }
 
-func syncOutApplyActions(opt *Options, place, out string, root *rbxfile.Root, actions []OutAction) error {
-	fmt.Printf("sync-out `%s` -> `%s`\n", filepath.Join(opt.Repo, place), filepath.Join(opt.Repo, out))
+func syncOutApplyActions(opt *Options, place, dir string, root *rbxfile.Root, actions []OutAction) error {
+	fmt.Printf("sync-out `%s` -> `%s`\n", filepath.Join(opt.Repo, place), filepath.Join(opt.Repo, dir))
 	for i, action := range actions {
-		dir := filepath.Join(action.Dir...)
-		path := filepath.Join(dir, action.Map.File.Name)
+		sub := filepath.Join(action.Dir...)
+		path := filepath.Join(dir, sub, action.Map.File.Name)
 		var typ string
 		if action.Map.File.IsDir {
 			typ = "dir "
@@ -477,7 +477,7 @@ func syncOutApplyActions(opt *Options, place, out string, root *rbxfile.Root, ac
 	return nil
 }
 
-func getOutDir(place string) string {
+func getPlaceDir(place string) string {
 	b := filepath.Base(place)
 	return filepath.Join(filepath.Dir(place), b[:len(b)-len(filepath.Ext(place))])
 }
@@ -497,11 +497,11 @@ func SyncOutReadRepo(opt *Options) error {
 	}
 
 	places := getPlacesInRepo(opt.Repo)
-	out := make([]string, len(places))
+	dirs := make([]string, len(places))
 	roots := make([]*rbxfile.Root, len(places))
 	actions := make([][]OutAction, len(places))
 	for i, place := range places {
-		out[i] = getOutDir(place)
+		dirs[i] = getPlaceDir(place)
 		root, a, err := syncOutReadPlace(opt, place, rules)
 		if err != nil {
 			//ERROR:
@@ -513,7 +513,7 @@ func SyncOutReadRepo(opt *Options) error {
 	}
 
 	// for i, place := range places {
-	// 	err := syncOutVerifyActions(opt, place, out[i], roots[i], actions[i])
+	// 	err := syncOutVerifyActions(opt, place, dirs[i], roots[i], actions[i])
 	// 	if err != nil {
 	// 		//ERROR:
 	// 		continue
@@ -521,7 +521,7 @@ func SyncOutReadRepo(opt *Options) error {
 	// }
 
 	for i, place := range places {
-		err := syncOutApplyActions(opt, place, out[i], roots[i], actions[i])
+		err := syncOutApplyActions(opt, place, dirs[i], roots[i], actions[i])
 		if err != nil {
 			//ERROR:
 			continue
