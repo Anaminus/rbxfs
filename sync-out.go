@@ -7,76 +7,11 @@ import (
 	"github.com/robloxapi/rbxfile"
 	"github.com/robloxapi/rbxfile/bin"
 	"github.com/robloxapi/rbxfile/xml"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
-
-const ProjectMetaDir = ".rbxfs"
-const RulesFileName = "rules"
-
-func pathIsRepo(path string) bool {
-	if _, err := os.Stat(filepath.Join(path, ProjectMetaDir)); os.IsNotExist(err) {
-		return false
-	}
-	return true
-}
-
-func parseRules(opt *Options, depth int, path string) ([]rulePair, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	p := &ruleParser{
-		defs:  opt.RuleDefs,
-		r:     f,
-		depth: depth,
-	}
-	if p.defs == nil {
-		p.defs = DefaultRuleDefs
-	}
-	return p.parseRules()
-}
-
-func globalRulePath() string {
-	// $APPDATA/rbxfs/{RulesFileName}
-	return ""
-}
-
-func projectRulePath(path string) string {
-	return filepath.Join(path, ProjectMetaDir, RulesFileName)
-}
-
-func filterRuleType(rules []rulePair, typ SyncType) (out []rulePair) {
-	for _, rule := range rules {
-		if rule.SyncType == typ {
-			out = append(out, rule)
-		}
-	}
-	return
-}
-
-func getPlacesInRepo(repo string) []string {
-	files, err := ioutil.ReadDir(repo)
-	if err != nil {
-		return nil
-	}
-	s := []string{}
-	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-		switch filepath.Ext(file.Name()) {
-		case ".rbxm", ".rbxmx", ".rbxl", ".rbxlx":
-			s = append(s, file.Name())
-		}
-	}
-	return s
-}
 
 func syncOutReadObject(opt *Options, obj *rbxfile.Instance, dir []string, rules []rulePair) (actions []OutAction, err error) {
 	defs := opt.RuleDefs
@@ -531,12 +466,6 @@ func syncOutApplyActions(opt *Options, place, out string, root *rbxfile.Root, ac
 		fmt.Printf("\t%4d %d; %s: %-43s; sel(%02d): {%s}\n", i, action.Depth, typ, path, len(action.Map.Selection), strings.Join(sel, "; "))
 	}
 	return nil
-}
-
-type Options struct {
-	Repo     string
-	RuleDefs *FuncDef
-	API      *rbxdump.API
 }
 
 func getOutDir(place string) string {
