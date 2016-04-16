@@ -351,9 +351,10 @@ var DefaultRuleDefs = &FuncDef{
 					if !isValidFileName(file, false) {
 						continue
 					}
-					if obj.Properties[name].Type() != typ {
-						continue
-					}
+					_ = typ
+					// if obj.Properties[name].Type() != typ {
+					// 	continue
+					// }
 					sel := []OutSelection{{Object: obj, Properties: []string{name}}}
 					if !format.CanEncode(sel) {
 						continue
