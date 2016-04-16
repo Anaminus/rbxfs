@@ -2,7 +2,7 @@ package rbxfs
 
 import (
 	"fmt"
-	"github.com/robloxapi/rbxdump"
+	"github.com/robloxapi/rbxapi"
 	"github.com/robloxapi/rbxfile"
 	"github.com/robloxapi/rbxfile/bin"
 	"io"
@@ -60,7 +60,7 @@ type Format interface {
 }
 
 type FormatRBXM struct {
-	API *rbxdump.API
+	API *rbxapi.API
 }
 
 func (FormatRBXM) Name() string {
@@ -111,7 +111,7 @@ func (f FormatRBXM) Decode(r io.Reader) (is ItemSource, err error) {
 }
 
 type FormatRBXMX struct {
-	API *rbxdump.API
+	API *rbxapi.API
 }
 
 func (FormatRBXMX) Name() string {
@@ -133,7 +133,7 @@ func (FormatRBXMX) Decode(r io.Reader) (is ItemSource, err error) {
 }
 
 type FormatRBXL struct {
-	API *rbxdump.API
+	API *rbxapi.API
 }
 
 func (FormatRBXL) Name() string {
@@ -155,7 +155,7 @@ func (f FormatRBXL) Decode(r io.Reader) (is ItemSource, err error) {
 }
 
 type FormatRBXLX struct {
-	API *rbxdump.API
+	API *rbxapi.API
 }
 
 func (FormatRBXLX) Name() string {
