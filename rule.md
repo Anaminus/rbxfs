@@ -120,7 +120,9 @@ and another for `in` rules.
 #### In Patterns
 
 - `File(name FileName)`
-	- Select a file by name.
+	- Select a file (not directory) by name.
+- `Directory(name FileName)`
+	- Select a directory by name.
 
 #### In Filters
 
