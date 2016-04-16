@@ -56,7 +56,7 @@ type Format interface {
 	Encode(w io.Writer, selections []OutSelection) error
 	// Decode reads formatted data from r, and decodes it into objects,
 	// properties, and values, added to obj.
-	Decode(r io.Reader) (ItemSource, error)
+	Decode(r io.Reader) (*ItemSource, error)
 }
 
 type FormatRBXM struct {
@@ -101,7 +101,7 @@ func (f FormatRBXM) Encode(w io.Writer, selections []OutSelection) error {
 	}
 	return nil
 }
-func (f FormatRBXM) Decode(r io.Reader) (is ItemSource, err error) {
+func (f FormatRBXM) Decode(r io.Reader) (is *ItemSource, err error) {
 	_, err = bin.DeserializeModel(r, f.API)
 	if err != nil {
 		err = ErrFmtDecode{err}
@@ -128,7 +128,7 @@ func (FormatRBXMX) CanEncode(sel []OutSelection) bool {
 func (FormatRBXMX) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
-func (FormatRBXMX) Decode(r io.Reader) (is ItemSource, err error) {
+func (FormatRBXMX) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
@@ -150,7 +150,7 @@ func (FormatRBXL) CanEncode(sel []OutSelection) bool {
 func (f FormatRBXL) Encode(w io.Writer, selections []OutSelection) error {
 	return nil
 }
-func (f FormatRBXL) Decode(r io.Reader) (is ItemSource, err error) {
+func (f FormatRBXL) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
@@ -172,7 +172,7 @@ func (FormatRBXLX) CanEncode(sel []OutSelection) bool {
 func (FormatRBXLX) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
-func (FormatRBXLX) Decode(r io.Reader) (is ItemSource, err error) {
+func (FormatRBXLX) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
@@ -192,7 +192,7 @@ func (FormatJSON) CanEncode(sel []OutSelection) bool {
 func (FormatJSON) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
-func (FormatJSON) Decode(r io.Reader) (is ItemSource, err error) {
+func (FormatJSON) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
@@ -212,7 +212,7 @@ func (FormatXML) CanEncode(sel []OutSelection) bool {
 func (FormatXML) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
-func (FormatXML) Decode(r io.Reader) (is ItemSource, err error) {
+func (FormatXML) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
@@ -232,7 +232,7 @@ func (FormatBin) Check(obj, prop, val int) bool {
 func (FormatBin) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
-func (FormatBin) Decode(r io.Reader) (is ItemSource, err error) {
+func (FormatBin) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
@@ -249,7 +249,7 @@ func (FormatLua) CanEncode(sel []OutSelection) bool {
 func (FormatLua) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
-func (FormatLua) Decode(r io.Reader) (is ItemSource, err error) {
+func (FormatLua) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
@@ -266,6 +266,6 @@ func (FormatText) CanEncode(sel []OutSelection) bool {
 func (FormatText) Encode(w io.Writer, sel []OutSelection) error {
 	return nil
 }
-func (FormatText) Decode(r io.Reader) (is ItemSource, err error) {
+func (FormatText) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
