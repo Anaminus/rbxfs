@@ -6,7 +6,33 @@ import (
 	"github.com/robloxapi/rbxfile"
 	"github.com/robloxapi/rbxfile/bin"
 	"io"
+	"strings"
 )
+
+func GetFormatFromExt(ext string) Format {
+	ext = strings.TrimPrefix(ext, ".")
+	switch ext {
+	case FormatRBXM{}.Ext():
+		return FormatRBXM{}
+	case FormatRBXMX{}.Ext():
+		return FormatRBXMX{}
+	case FormatRBXL{}.Ext():
+		return FormatRBXL{}
+	case FormatRBXLX{}.Ext():
+		return FormatRBXLX{}
+	case FormatJSON{}.Ext():
+		return FormatJSON{}
+	case FormatXML{}.Ext():
+		return FormatXML{}
+	case FormatBin{}.Ext():
+		return FormatBin{}
+	case FormatLua{}.Ext():
+		return FormatLua{}
+	case FormatText{}.Ext():
+		return FormatText{}
+	}
+	return nil
+}
 
 type ErrFmtSelection struct {
 	Format string
@@ -50,6 +76,7 @@ func (err ErrFmtDecode) Error() string {
 
 type Format interface {
 	Name() string
+	Ext() string
 	// CanEncode returns whether the selections can be encoded.
 	CanEncode(selections []OutSelection) bool
 	// Encode uses Selection sel to read data from obj, and encode it to a format written to w.
@@ -65,6 +92,9 @@ type FormatRBXM struct {
 
 func (FormatRBXM) Name() string {
 	return "RBXM"
+}
+func (FormatRBXM) Ext() string {
+	return "rbxm"
 }
 func (FormatRBXM) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -117,6 +147,9 @@ type FormatRBXMX struct {
 func (FormatRBXMX) Name() string {
 	return "RBXMX"
 }
+func (FormatRBXMX) Ext() string {
+	return "rbxmx"
+}
 func (FormatRBXMX) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
 		if len(s.Properties) > 0 {
@@ -138,6 +171,9 @@ type FormatRBXL struct {
 
 func (FormatRBXL) Name() string {
 	return "RBXL"
+}
+func (FormatRBXL) Ext() string {
+	return "rbxl"
 }
 func (FormatRBXL) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -161,6 +197,9 @@ type FormatRBXLX struct {
 func (FormatRBXLX) Name() string {
 	return "RBXLX"
 }
+func (FormatRBXLX) Ext() string {
+	return "rbxlx"
+}
 func (FormatRBXLX) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
 		if len(s.Properties) > 0 {
@@ -180,6 +219,9 @@ type FormatJSON struct{}
 
 func (FormatJSON) Name() string {
 	return "JSON"
+}
+func (FormatJSON) Ext() string {
+	return "json"
 }
 func (FormatJSON) CanEncode(sel []OutSelection) bool {
 	if len(sel) > 1 {
@@ -201,6 +243,9 @@ type FormatXML struct{}
 func (FormatXML) Name() string {
 	return "XML"
 }
+func (FormatXML) Ext() string {
+	return "xml"
+}
 func (FormatXML) CanEncode(sel []OutSelection) bool {
 	if len(sel) > 1 {
 		return false
@@ -220,6 +265,9 @@ type FormatBin struct{}
 
 func (FormatBin) Name() string {
 	return "Bin"
+}
+func (FormatBin) Ext() string {
+	return "bin"
 }
 func (FormatBin) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&
@@ -241,6 +289,9 @@ type FormatLua struct{}
 func (FormatLua) Name() string {
 	return "Lua"
 }
+func (FormatLua) Ext() string {
+	return "lua"
+}
 func (FormatLua) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&
 		len(sel[0].Children) == 0 &&
@@ -257,6 +308,9 @@ type FormatText struct{}
 
 func (FormatText) Name() string {
 	return "Text"
+}
+func (FormatText) Ext() string {
+	return "txt"
 }
 func (FormatText) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&

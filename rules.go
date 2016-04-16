@@ -283,27 +283,9 @@ var DefaultRuleDefs = &FuncDef{
 			Args: []ArgType{ArgTypeString},
 			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				name := string(args[0].(ArgString))
-				var format Format
-				switch ext := filepath.Ext(name); ext {
-				case ".rbxm":
-					format = FormatRBXM{}
-				case ".rbxmx":
-					format = FormatRBXMX{}
-				// case ".rbxl":
-				// format = FormatRBXL{}
-				// case ".rbxlx":
-				// format = FormatRBXLX{}
-				case ".json":
-					format = FormatJSON{}
-				case ".xml":
-					format = FormatXML{}
-				case ".bin":
-					format = FormatBin{}
-				case ".lua":
-					format = FormatLua{}
-				case ".txt":
-					format = FormatText{}
-				default:
+
+				format := GetFormatFromExt(filepath.Ext(name))
+				if format == nil {
 					return nil, errors.New("unsupported file extension for " + name)
 				}
 
