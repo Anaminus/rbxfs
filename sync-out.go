@@ -489,24 +489,7 @@ func SyncOutReadRepo(opt *Options) error {
 		return errors.New("not a repo")
 	}
 
-	var rules []rulePair
-
-	r, err := parseRules(opt, 1, globalRulePath())
-	if err != nil {
-		//ERROR:
-		fmt.Println("global rules:", err)
-	} else {
-		rules = append(rules, r...)
-	}
-
-	r, err = parseRules(opt, 2, projectRulePath(repo))
-	if err != nil {
-		//ERROR:
-		fmt.Println("project rules:", err)
-	} else {
-		rules = append(rules, r...)
-	}
-
+	rules, _ := getStdRules(opt)
 	rules = filterRuleType(rules, SyncOut)
 
 	fmt.Println("RULES:", len(rules))
