@@ -1,11 +1,17 @@
 package rbxfs
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/robloxapi/rbxapi"
 	"github.com/robloxapi/rbxfile"
 	"github.com/robloxapi/rbxfile/bin"
+	rbxfile_json "github.com/robloxapi/rbxfile/json"
+	"github.com/robloxapi/rbxfile/xml"
 	"io"
+	"io/ioutil"
 	"strings"
 )
 
@@ -144,6 +150,7 @@ func (f FormatRBXM) Decode(r io.Reader) (is *ItemSource, err error) {
 		err = ErrFmtDecode{err}
 		return
 	}
+	is = &ItemSource{Children: root.Instances}
 	return
 }
 
@@ -171,10 +178,40 @@ func (FormatRBXMX) CanEncode(sel []OutSelection) bool {
 	}
 	return true
 }
-func (FormatRBXMX) Encode(w io.Writer, sel []OutSelection) error {
+func (f FormatRBXMX) Encode(w io.Writer, selections []OutSelection) error {
+	if !f.CanEncode(selections) {
+		//ERROR:
+		return ErrFmtSelection{f.Name()}
+	}
+
+	n := 0
+	for _, s := range selections {
+		n += len(s.Children)
+	}
+
+	instances := make([]*rbxfile.Instance, 0, n)
+	for _, s := range selections {
+		for i, v := range s.Children {
+			if v < 0 || v >= len(s.Object.Children) {
+				//ERROR:
+				return ErrFmtBounds{f.Name(), "child", i, v, len(s.Object.Children)}
+			}
+			instances = append(instances, s.Object.Children[v])
+		}
+	}
+	if err := xml.Serialize(w, f.api, &rbxfile.Root{Instances: instances}); err != nil {
+		//ERROR:
+		return ErrFmtEncode{err}
+	}
 	return nil
 }
-func (FormatRBXMX) Decode(r io.Reader) (is *ItemSource, err error) {
+func (f FormatRBXMX) Decode(r io.Reader) (is *ItemSource, err error) {
+	root, err := xml.Deserialize(r, f.api)
+	if err != nil {
+		err = ErrFmtDecode{err}
+		return
+	}
+	is = &ItemSource{Children: root.Instances}
 	return
 }
 
@@ -203,9 +240,39 @@ func (FormatRBXL) CanEncode(sel []OutSelection) bool {
 	return true
 }
 func (f FormatRBXL) Encode(w io.Writer, selections []OutSelection) error {
+	if !f.CanEncode(selections) {
+		//ERROR:
+		return ErrFmtSelection{f.Name()}
+	}
+
+	n := 0
+	for _, s := range selections {
+		n += len(s.Children)
+	}
+
+	instances := make([]*rbxfile.Instance, 0, n)
+	for _, s := range selections {
+		for i, v := range s.Children {
+			if v < 0 || v >= len(s.Object.Children) {
+				//ERROR:
+				return ErrFmtBounds{f.Name(), "child", i, v, len(s.Object.Children)}
+			}
+			instances = append(instances, s.Object.Children[v])
+		}
+	}
+	if err := bin.SerializePlace(w, f.api, &rbxfile.Root{Instances: instances}); err != nil {
+		//ERROR:
+		return ErrFmtEncode{err}
+	}
 	return nil
 }
 func (f FormatRBXL) Decode(r io.Reader) (is *ItemSource, err error) {
+	root, err := bin.DeserializePlace(r, f.api)
+	if err != nil {
+		err = ErrFmtDecode{err}
+		return
+	}
+	is = &ItemSource{Children: root.Instances}
 	return
 }
 
@@ -233,10 +300,40 @@ func (FormatRBXLX) CanEncode(sel []OutSelection) bool {
 	}
 	return true
 }
-func (FormatRBXLX) Encode(w io.Writer, sel []OutSelection) error {
+func (f FormatRBXLX) Encode(w io.Writer, selections []OutSelection) error {
+	if !f.CanEncode(selections) {
+		//ERROR:
+		return ErrFmtSelection{f.Name()}
+	}
+
+	n := 0
+	for _, s := range selections {
+		n += len(s.Children)
+	}
+
+	instances := make([]*rbxfile.Instance, 0, n)
+	for _, s := range selections {
+		for i, v := range s.Children {
+			if v < 0 || v >= len(s.Object.Children) {
+				//ERROR:
+				return ErrFmtBounds{f.Name(), "child", i, v, len(s.Object.Children)}
+			}
+			instances = append(instances, s.Object.Children[v])
+		}
+	}
+	if err := xml.Serialize(w, f.api, &rbxfile.Root{Instances: instances}); err != nil {
+		//ERROR:
+		return ErrFmtEncode{err}
+	}
 	return nil
 }
-func (FormatRBXLX) Decode(r io.Reader) (is *ItemSource, err error) {
+func (f FormatRBXLX) Decode(r io.Reader) (is *ItemSource, err error) {
+	root, err := xml.Deserialize(r, f.api)
+	if err != nil {
+		err = ErrFmtDecode{err}
+		return
+	}
+	is = &ItemSource{Children: root.Instances}
 	return
 }
 
@@ -264,11 +361,69 @@ func (FormatJSON) CanEncode(sel []OutSelection) bool {
 	}
 	return true
 }
-func (FormatJSON) Encode(w io.Writer, sel []OutSelection) error {
+func (f FormatJSON) Encode(w io.Writer, selections []OutSelection) error {
+	if !f.CanEncode(selections) {
+		//ERROR:
+		return ErrFmtSelection{f.Name()}
+	}
+
+	_refs := map[string]*rbxfile.Instance{}
+
+	obj := selections[0].Object
+	names := selections[0].Properties
+	properties := make(map[string]interface{}, len(names))
+	for _, name := range names {
+		value, ok := obj.Properties[name]
+		if !ok {
+			continue
+		}
+
+		// REFS
+		properties[name] = map[string]interface{}{
+			"type":  value.Type().String(),
+			"value": rbxfile_json.ValueToJSONInterface(value, _refs),
+		}
+	}
+
+	b, err := json.Marshal(properties)
+	if err != nil {
+		// ERROR
+		return ErrFmtEncode{err}
+	}
+	buf := &bytes.Buffer{}
+	if err := json.Indent(buf, b, "", "\t"); err != nil {
+		// ERROR
+		return ErrFmtEncode{err}
+	}
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		// ERROR
+		return ErrFmtEncode{err}
+	}
 	return nil
 }
-func (FormatJSON) Decode(r io.Reader) (is *ItemSource, err error) {
-	return
+func (f FormatJSON) Decode(r io.Reader) (is *ItemSource, err error) {
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		// ERROR
+		return nil, ErrFmtDecode{err}
+	}
+	iprops := map[string]interface{}{}
+	if err := json.Unmarshal(b, &iprops); err != nil {
+		// ERROR
+		return nil, ErrFmtDecode{err}
+	}
+
+	// REFS
+	inst, _ := rbxfile_json.InstanceFromJSONInterface(
+		map[string]interface{}{
+			"class_name": "",
+			"properties": iprops,
+		},
+		map[string]*rbxfile.Instance{},
+		&[]rbxfile_json.PropRef{},
+	)
+
+	return &ItemSource{Properties: inst.Properties}, nil
 }
 
 type FormatXML struct {
@@ -295,10 +450,11 @@ func (FormatXML) CanEncode(sel []OutSelection) bool {
 	}
 	return true
 }
-func (FormatXML) Encode(w io.Writer, sel []OutSelection) error {
-	return nil
+func (f FormatXML) Encode(w io.Writer, selections []OutSelection) error {
+	return errors.New("not implemented")
 }
-func (FormatXML) Decode(r io.Reader) (is *ItemSource, err error) {
+func (f FormatXML) Decode(r io.Reader) (is *ItemSource, err error) {
+	err = errors.New("not implemented")
 	return
 }
 
@@ -319,17 +475,37 @@ func (f *FormatBin) SetAPI(api *rbxapi.API) {
 	f.api = api
 }
 func (FormatBin) CanEncode(sel []OutSelection) bool {
-	return len(sel) == 1 &&
-		len(sel[0].Children) == 0 &&
-		len(sel[0].Properties) == 1
+	if len(sel) != 1 ||
+		len(sel[0].Children) != 0 ||
+		len(sel[0].Properties) != 1 {
+		return false
+	}
+	name := sel[0].Properties[0]
+	prop := sel[0].Object.Properties[name]
+	return prop.Type() == rbxfile.TypeBinaryString
 }
-func (FormatBin) Check(obj, prop, val int) bool {
-	return obj == 0 && prop == 0 && val == 1
-}
-func (FormatBin) Encode(w io.Writer, sel []OutSelection) error {
+func (f FormatBin) Encode(w io.Writer, selections []OutSelection) error {
+	if !f.CanEncode(selections) {
+		//ERROR:
+		return ErrFmtSelection{f.Name()}
+	}
+	name := selections[0].Properties[0]
+	prop := selections[0].Object.Properties[name].(rbxfile.ValueBinaryString)
+	if _, err := w.Write([]byte(prop)); err != nil {
+		return ErrFmtEncode{err}
+	}
 	return nil
 }
-func (FormatBin) Decode(r io.Reader) (is *ItemSource, err error) {
+func (f FormatBin) Decode(r io.Reader) (is *ItemSource, err error) {
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, ErrFmtDecode{err}
+	}
+	is = &ItemSource{
+		Values: []rbxfile.Value{
+			rbxfile.ValueBinaryString(data),
+		},
+	}
 	return
 }
 
@@ -350,14 +526,37 @@ func (f *FormatLua) SetAPI(api *rbxapi.API) {
 	f.api = api
 }
 func (FormatLua) CanEncode(sel []OutSelection) bool {
-	return len(sel) == 1 &&
-		len(sel[0].Children) == 0 &&
-		len(sel[0].Properties) == 1
+	if len(sel) != 1 ||
+		len(sel[0].Children) != 0 ||
+		len(sel[0].Properties) != 1 {
+		return false
+	}
+	name := sel[0].Properties[0]
+	prop := sel[0].Object.Properties[name]
+	return prop.Type() == rbxfile.TypeProtectedString
 }
-func (FormatLua) Encode(w io.Writer, sel []OutSelection) error {
+func (f FormatLua) Encode(w io.Writer, selections []OutSelection) error {
+	if !f.CanEncode(selections) {
+		//ERROR:
+		return ErrFmtSelection{f.Name()}
+	}
+	name := selections[0].Properties[0]
+	prop := selections[0].Object.Properties[name].(rbxfile.ValueProtectedString)
+	if _, err := w.Write([]byte(prop)); err != nil {
+		return ErrFmtEncode{err}
+	}
 	return nil
 }
-func (FormatLua) Decode(r io.Reader) (is *ItemSource, err error) {
+func (f FormatLua) Decode(r io.Reader) (is *ItemSource, err error) {
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, ErrFmtDecode{err}
+	}
+	is = &ItemSource{
+		Values: []rbxfile.Value{
+			rbxfile.ValueProtectedString(data),
+		},
+	}
 	return
 }
 
@@ -378,13 +577,36 @@ func (f *FormatText) SetAPI(api *rbxapi.API) {
 	f.api = api
 }
 func (FormatText) CanEncode(sel []OutSelection) bool {
-	return len(sel) == 1 &&
-		len(sel[0].Children) == 0 &&
-		len(sel[0].Properties) == 1
+	if len(sel) != 1 ||
+		len(sel[0].Children) != 0 ||
+		len(sel[0].Properties) != 1 {
+		return false
+	}
+	name := sel[0].Properties[0]
+	prop := sel[0].Object.Properties[name]
+	return prop.Type() == rbxfile.TypeString
 }
-func (FormatText) Encode(w io.Writer, sel []OutSelection) error {
+func (f FormatText) Encode(w io.Writer, selections []OutSelection) error {
+	if !f.CanEncode(selections) {
+		//ERROR:
+		return ErrFmtSelection{f.Name()}
+	}
+	name := selections[0].Properties[0]
+	prop := selections[0].Object.Properties[name].(rbxfile.ValueString)
+	if _, err := w.Write([]byte(prop)); err != nil {
+		return ErrFmtEncode{err}
+	}
 	return nil
 }
-func (FormatText) Decode(r io.Reader) (is *ItemSource, err error) {
+func (f FormatText) Decode(r io.Reader) (is *ItemSource, err error) {
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, ErrFmtDecode{err}
+	}
+	is = &ItemSource{
+		Values: []rbxfile.Value{
+			rbxfile.ValueString(data),
+		},
+	}
 	return
 }
