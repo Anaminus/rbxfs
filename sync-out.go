@@ -7,6 +7,7 @@ import (
 	"github.com/robloxapi/rbxfile"
 	"github.com/robloxapi/rbxfile/bin"
 	"github.com/robloxapi/rbxfile/xml"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -452,10 +453,6 @@ func syncOutAnalyzeActions(actions []OutAction) []OutAction {
 }
 
 func syncOutVerifyActions(opt *Options, place, dir string, root *rbxfile.Root, actions []OutAction) error {
-	return nil
-}
-
-func syncOutApplyActions(opt *Options, place, dir string, root *rbxfile.Root, actions []OutAction) error {
 	fmt.Printf("sync-out `%s` -> `%s`\n", filepath.Join(opt.Repo, place), filepath.Join(opt.Repo, dir))
 	for i, action := range actions {
 		sub := filepath.Join(action.Dir...)
@@ -473,6 +470,55 @@ func syncOutApplyActions(opt *Options, place, dir string, root *rbxfile.Root, ac
 			))
 		}
 		fmt.Printf("\t%4d %d; %s: %-43s; sel(%02d): {%s}\n", i, action.Depth, typ, path, len(action.Map.Selection), strings.Join(sel, "; "))
+	}
+	return nil
+}
+
+func syncOutApplyActions(opt *Options, place, dir string, root *rbxfile.Root, actions []OutAction) error {
+	if err := os.Mkdir(filepath.Join(opt.Repo, dir), 0666); !os.IsExist(err) {
+		fmt.Printf("ERROR: %s\n", err)
+		return nil
+	}
+	for i, action := range actions {
+		if action.Map.File.Name == "" {
+			// Ignore.
+			continue
+		}
+		sub := filepath.Join(action.Dir...)
+		path := filepath.Join(dir, sub, action.Map.File.Name)
+		abspath := filepath.Join(opt.Repo, path)
+		if action.Map.File.IsDir {
+			if err := os.Mkdir(abspath, 0666); !os.IsExist(err) {
+				fmt.Printf("ERROR (%d): %s\n", i, err)
+				continue
+			}
+			sel := action.Map.Selection[0]
+			obj := sel.Object.Children[sel.Children[0]]
+			if err := ioutil.WriteFile(filepath.Join(abspath, classNameFile), []byte(obj.ClassName), 0666); err != nil {
+				fmt.Printf("ERROR (%d): %s\n", i, err)
+				continue
+			}
+		} else {
+			ext := filepath.Ext(abspath)
+			format := GetFormatFromExt(strings.TrimPrefix(ext, "."))
+			if format == nil {
+				fmt.Printf("ERROR (%d): %s `%s`\n", i, "unknown format extension", ext)
+				continue
+			}
+			format.SetAPI(opt.API)
+
+			f, err := os.Create(abspath)
+			if err != nil {
+				fmt.Printf("ERROR (%d): %s\n", i, err)
+				continue
+			}
+			if err := format.Encode(f, action.Map.Selection); err != nil {
+				fmt.Printf("ERROR (%d): %s\n", i, err)
+				f.Close()
+				continue
+			}
+			f.Close()
+		}
 	}
 	return nil
 }
@@ -512,13 +558,13 @@ func SyncOutReadRepo(opt *Options) error {
 		actions[i] = syncOutAnalyzeActions(a)
 	}
 
-	// for i, place := range places {
-	// 	err := syncOutVerifyActions(opt, place, dirs[i], roots[i], actions[i])
-	// 	if err != nil {
-	// 		//ERROR:
-	// 		continue
-	// 	}
-	// }
+	for i, place := range places {
+		err := syncOutVerifyActions(opt, place, dirs[i], roots[i], actions[i])
+		if err != nil {
+			//ERROR:
+			continue
+		}
+	}
 
 	for i, place := range places {
 		err := syncOutApplyActions(opt, place, dirs[i], roots[i], actions[i])
