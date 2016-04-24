@@ -13,23 +13,23 @@ func GetFormatFromExt(ext string) Format {
 	ext = strings.TrimPrefix(ext, ".")
 	switch ext {
 	case FormatRBXM{}.Ext():
-		return FormatRBXM{}
+		return &FormatRBXM{}
 	case FormatRBXMX{}.Ext():
-		return FormatRBXMX{}
+		return &FormatRBXMX{}
 	case FormatRBXL{}.Ext():
-		return FormatRBXL{}
+		return &FormatRBXL{}
 	case FormatRBXLX{}.Ext():
-		return FormatRBXLX{}
+		return &FormatRBXLX{}
 	case FormatJSON{}.Ext():
-		return FormatJSON{}
+		return &FormatJSON{}
 	case FormatXML{}.Ext():
-		return FormatXML{}
+		return &FormatXML{}
 	case FormatBin{}.Ext():
-		return FormatBin{}
+		return &FormatBin{}
 	case FormatLua{}.Ext():
-		return FormatLua{}
+		return &FormatLua{}
 	case FormatText{}.Ext():
-		return FormatText{}
+		return &FormatText{}
 	}
 	return nil
 }
@@ -77,17 +77,18 @@ func (err ErrFmtDecode) Error() string {
 type Format interface {
 	Name() string
 	Ext() string
+	API() *rbxapi.API
+	SetAPI(api *rbxapi.API)
 	// CanEncode returns whether the selections can be encoded.
 	CanEncode(selections []OutSelection) bool
-	// Encode uses Selection sel to read data from obj, and encode it to a format written to w.
+	// Encode encodes the selection in a format written to w.
 	Encode(w io.Writer, selections []OutSelection) error
-	// Decode reads formatted data from r, and decodes it into objects,
-	// properties, and values, added to obj.
+	// Decode reads formatted data from r, and decodes it into an ItemSource.
 	Decode(r io.Reader) (*ItemSource, error)
 }
 
 type FormatRBXM struct {
-	API *rbxapi.API
+	api *rbxapi.API
 }
 
 func (FormatRBXM) Name() string {
@@ -95,6 +96,12 @@ func (FormatRBXM) Name() string {
 }
 func (FormatRBXM) Ext() string {
 	return "rbxm"
+}
+func (f FormatRBXM) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatRBXM) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatRBXM) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -125,14 +132,14 @@ func (f FormatRBXM) Encode(w io.Writer, selections []OutSelection) error {
 			instances = append(instances, s.Object.Children[v])
 		}
 	}
-	if err := bin.SerializeModel(w, f.API, &rbxfile.Root{Instances: instances}); err != nil {
+	if err := bin.SerializeModel(w, f.api, &rbxfile.Root{Instances: instances}); err != nil {
 		//ERROR:
 		return ErrFmtEncode{err}
 	}
 	return nil
 }
 func (f FormatRBXM) Decode(r io.Reader) (is *ItemSource, err error) {
-	_, err = bin.DeserializeModel(r, f.API)
+	root, err := bin.DeserializeModel(r, f.api)
 	if err != nil {
 		err = ErrFmtDecode{err}
 		return
@@ -141,7 +148,7 @@ func (f FormatRBXM) Decode(r io.Reader) (is *ItemSource, err error) {
 }
 
 type FormatRBXMX struct {
-	API *rbxapi.API
+	api *rbxapi.API
 }
 
 func (FormatRBXMX) Name() string {
@@ -149,6 +156,12 @@ func (FormatRBXMX) Name() string {
 }
 func (FormatRBXMX) Ext() string {
 	return "rbxmx"
+}
+func (f FormatRBXMX) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatRBXMX) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatRBXMX) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -166,7 +179,7 @@ func (FormatRBXMX) Decode(r io.Reader) (is *ItemSource, err error) {
 }
 
 type FormatRBXL struct {
-	API *rbxapi.API
+	api *rbxapi.API
 }
 
 func (FormatRBXL) Name() string {
@@ -174,6 +187,12 @@ func (FormatRBXL) Name() string {
 }
 func (FormatRBXL) Ext() string {
 	return "rbxl"
+}
+func (f FormatRBXL) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatRBXL) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatRBXL) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -191,7 +210,7 @@ func (f FormatRBXL) Decode(r io.Reader) (is *ItemSource, err error) {
 }
 
 type FormatRBXLX struct {
-	API *rbxapi.API
+	api *rbxapi.API
 }
 
 func (FormatRBXLX) Name() string {
@@ -199,6 +218,12 @@ func (FormatRBXLX) Name() string {
 }
 func (FormatRBXLX) Ext() string {
 	return "rbxlx"
+}
+func (f FormatRBXLX) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatRBXLX) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatRBXLX) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -215,13 +240,21 @@ func (FormatRBXLX) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
-type FormatJSON struct{}
+type FormatJSON struct {
+	api *rbxapi.API
+}
 
 func (FormatJSON) Name() string {
 	return "JSON"
 }
 func (FormatJSON) Ext() string {
 	return "json"
+}
+func (f FormatJSON) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatJSON) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatJSON) CanEncode(sel []OutSelection) bool {
 	if len(sel) > 1 {
@@ -238,13 +271,21 @@ func (FormatJSON) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
-type FormatXML struct{}
+type FormatXML struct {
+	api *rbxapi.API
+}
 
 func (FormatXML) Name() string {
 	return "XML"
 }
 func (FormatXML) Ext() string {
 	return "xml"
+}
+func (f FormatXML) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatXML) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatXML) CanEncode(sel []OutSelection) bool {
 	if len(sel) > 1 {
@@ -261,13 +302,21 @@ func (FormatXML) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
-type FormatBin struct{}
+type FormatBin struct {
+	api *rbxapi.API
+}
 
 func (FormatBin) Name() string {
 	return "Bin"
 }
 func (FormatBin) Ext() string {
 	return "bin"
+}
+func (f FormatBin) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatBin) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatBin) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&
@@ -284,13 +333,21 @@ func (FormatBin) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
-type FormatLua struct{}
+type FormatLua struct {
+	api *rbxapi.API
+}
 
 func (FormatLua) Name() string {
 	return "Lua"
 }
 func (FormatLua) Ext() string {
 	return "lua"
+}
+func (f FormatLua) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatLua) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatLua) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&
@@ -304,13 +361,21 @@ func (FormatLua) Decode(r io.Reader) (is *ItemSource, err error) {
 	return
 }
 
-type FormatText struct{}
+type FormatText struct {
+	api *rbxapi.API
+}
 
 func (FormatText) Name() string {
 	return "Text"
 }
 func (FormatText) Ext() string {
 	return "txt"
+}
+func (f FormatText) API() *rbxapi.API {
+	return f.api
+}
+func (f *FormatText) SetAPI(api *rbxapi.API) {
+	f.api = api
 }
 func (FormatText) CanEncode(sel []OutSelection) bool {
 	return len(sel) == 1 &&

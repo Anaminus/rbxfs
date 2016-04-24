@@ -174,26 +174,23 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dir str
 		var format Format
 		switch ext := filepath.Ext(name); ext {
 		case ".rbxm":
-			format = FormatRBXM{
-				API: opt.API,
-			}
+			format = &FormatRBXM{}
 		case ".rbxmx":
-			format = FormatRBXMX{
-				API: opt.API,
-			}
+			format = &FormatRBXMX{}
 		case ".json":
-			format = FormatJSON{}
+			format = &FormatJSON{}
 		case ".xml":
-			format = FormatXML{}
+			format = &FormatXML{}
 		case ".bin":
-			format = FormatBin{}
+			format = &FormatBin{}
 		case ".lua":
-			format = FormatLua{}
+			format = &FormatLua{}
 		case ".txt":
-			format = FormatText{}
+			format = &FormatText{}
 		default:
 			//error: pattern selected file with unsupported format
 		}
+		format.SetAPI(opt.API)
 
 		r, err := os.Open(filepath.Join(opt.Repo, relname))
 		if err != nil {
@@ -395,13 +392,13 @@ var DefaultRuleDefs = &FuncDef{
 				var typ rbxfile.Type
 				switch ext {
 				case "bin":
-					format = FormatBin{}
+					format = &FormatBin{}
 					typ = rbxfile.TypeBinaryString
 				case "lua":
-					format = FormatLua{}
+					format = &FormatLua{}
 					typ = rbxfile.TypeProtectedString
 				case "txt":
-					format = FormatText{}
+					format = &FormatText{}
 					typ = rbxfile.TypeString
 				default:
 					return nil, errors.New("unsupported format")
