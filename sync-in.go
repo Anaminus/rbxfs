@@ -17,7 +17,7 @@ func syncInReadDir(opt *Options, cache SourceCache, dir []string, rules []rulePa
 	children := map[string]bool{}
 	for _, pair := range rules {
 		jdir := filepath.Join(dir...)
-		is, err := opt.RuleDefs.CallIn(opt, cache, pair, jdir)
+		is, err := defs.CallIn(opt, cache, pair, jdir)
 		if err != nil {
 			//ERROR
 			return nil, err
