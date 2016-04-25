@@ -129,7 +129,6 @@ func SyncInReadRepo(opt *Options) error {
 			//ERROR:
 			continue
 		}
-		_, _ = i, dir
 	}
 
 	for i, dir := range dirs {
@@ -138,7 +137,6 @@ func SyncInReadRepo(opt *Options) error {
 			//ERROR:
 			continue
 		}
-		_, _ = i, dir
 	}
 
 	return nil
