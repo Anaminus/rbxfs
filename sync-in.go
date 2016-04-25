@@ -67,9 +67,6 @@ func syncInAnalyzeActions(actions []InAction) []InAction {
 }
 
 func syncInVerifyActions(opt *Options, dir, place string, cache SourceCache, actions []InAction) error {
-	return nil
-}
-func syncInApplyActions(opt *Options, dir, place string, cache SourceCache, actions []InAction) error {
 	fmt.Printf("sync-in `%s` -> `%s`\n", filepath.Join(opt.Repo, dir), filepath.Join(opt.Repo, place))
 	for i, action := range actions {
 		sub := filepath.Join(action.Dir...)
@@ -81,8 +78,11 @@ func syncInApplyActions(opt *Options, dir, place string, cache SourceCache, acti
 				s.File, s.Ignore, s.Children, s.Properties, s.Values,
 			))
 		}
-		fmt.Printf("\t%4d %d; %-43s; sel(%02d): {%s}\n", i, action.Depth, path, len(action.Selection), strings.Join(sel, "; "))
+		fmt.Printf("\t%4d %d; %-32s; sel(%02d): {%s}\n", i, action.Depth, path, len(action.Selection), strings.Join(sel, "; "))
 	}
+	return nil
+}
+func syncInApplyActions(opt *Options, dir, place string, cache SourceCache, actions []InAction) error {
 	return nil
 }
 
