@@ -121,8 +121,11 @@ and another for `in` rules.
 
 - `File(name FileName)`
 	- Select a file (not directory) by name.
-- `Directory(name FileName)`
-	- Select a directory by name.
+- `Directory(class Class, name FileName)`
+	- Select a directory.
+	- First selects by the class name associated with the directory (stored
+      under `(directory)/ClassName`).
+    - Then selects by the name of the directory.
 
 #### In Filters
 
