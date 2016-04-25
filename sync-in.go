@@ -24,8 +24,8 @@ func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []str
 		}
 		for _, s := range is {
 			// Scan for directories.
-			if source, ok := cache[filepath.Join(jdir, s.File)]; ok {
-				if source.IsDir && len(s.Children) == 1 {
+			if !s.Ignore && len(s.Children) == 1 {
+				if source, ok := cache[filepath.Join(jdir, s.File)]; ok && source.IsDir {
 					children[s.File] = true
 				}
 			}
