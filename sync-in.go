@@ -46,7 +46,7 @@ func syncInReadDir(opt *Options, cache SourceCache, dir []string, rules []rulePa
 		subdir := make([]string, len(dir)+1)
 		copy(subdir, dir)
 		subdir[len(subdir)-1] = name
-		a, err := syncInReadDir(opt, cache, dir, rules)
+		a, err := syncInReadDir(opt, cache, subdir, rules)
 		if err != nil {
 			//ERROR
 			return nil, err
