@@ -85,7 +85,7 @@ func syncInEncodeRoot() error { return nil }
 
 func getDirPlace(dir string) (place string) {
 	// dir.basename + dir-meta.format
-	return ""
+	return filepath.Base(dir) + ".rbxl"
 }
 
 func SyncInReadRepo(opt *Options) error {
