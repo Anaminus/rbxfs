@@ -141,7 +141,7 @@ func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (o
 }
 
 // path: relative to opt.Repo
-func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dir string) (is []InSelection, err error) {
+func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname, subdir string) (is []InSelection, err error) {
 	if pair.SyncType != SyncIn {
 		err = errors.New("expected sync-in function pair")
 		return
@@ -158,7 +158,7 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dir str
 		return
 	}
 
-	sfile, err := patternFn.Func(opt, pair.Pattern.Args, dir)
+	sfile, err := patternFn.Func(opt, pair.Pattern.Args, filepath.Join(dirname, subdir))
 	if err != nil {
 		err = fmt.Errorf("pattern error: %s", err.Error())
 		return
@@ -166,10 +166,10 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dir str
 
 	sm := make([]SourceMap, 0, len(sfile))
 	for _, name := range sfile {
-		relname := filepath.Join(dir, name)
+		relname := filepath.Join(subdir, name)
 		scItem, ok := cache[relname]
 		if !ok {
-			r, err := os.Open(filepath.Join(opt.Repo, relname))
+			r, err := os.Open(filepath.Join(opt.Repo, dirname, relname))
 			if err != nil {
 				return nil, err
 			}
@@ -181,7 +181,7 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dir str
 
 			scItem.IsDir = stat.IsDir()
 			if scItem.IsDir {
-				className, err := readClassNameFile(filepath.Join(opt.Repo, dir, name))
+				className, err := readClassNameFile(filepath.Join(opt.Repo, dirname, relname))
 				if err != nil {
 					//ERROR: ignore directory?
 					continue

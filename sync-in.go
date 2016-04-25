@@ -8,16 +8,16 @@ import (
 	"strings"
 )
 
-func syncInReadDir(opt *Options, cache SourceCache, dir []string, rules []rulePair) (actions []InAction, err error) {
+func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []string, rules []rulePair) (actions []InAction, err error) {
 	defs := opt.RuleDefs
 	if defs == nil {
 		defs = DefaultRuleDefs
 	}
 
 	children := map[string]bool{}
-	jdir := filepath.Join(dir...)
+	jdir := filepath.Join(subdir...)
 	for _, pair := range rules {
-		is, err := defs.CallIn(opt, cache, pair, jdir)
+		is, err := defs.CallIn(opt, cache, pair, dirname, jdir)
 		if err != nil {
 			//ERROR
 			return nil, err
@@ -31,7 +31,7 @@ func syncInReadDir(opt *Options, cache SourceCache, dir []string, rules []rulePa
 			}
 			actions = append(actions, InAction{
 				Depth:     pair.Depth,
-				Dir:       dir,
+				Dir:       subdir,
 				Selection: []InSelection{s},
 			})
 		}
@@ -48,10 +48,10 @@ func syncInReadDir(opt *Options, cache SourceCache, dir []string, rules []rulePa
 	sort.Strings(sorted)
 
 	for _, name := range sorted {
-		subdir := make([]string, len(dir)+1)
-		copy(subdir, dir)
-		subdir[len(subdir)-1] = name
-		a, err := syncInReadDir(opt, cache, subdir, rules)
+		sub := make([]string, len(subdir)+1)
+		copy(sub, subdir)
+		sub[len(sub)-1] = name
+		a, err := syncInReadDir(opt, cache, dirname, sub, rules)
 		if err != nil {
 			//ERROR
 			return nil, err
@@ -281,16 +281,13 @@ func syncInAnalyzeActions(actions []InAction) []InAction {
 func syncInVerifyActions(opt *Options, dir, place string, cache SourceCache, actions []InAction) error {
 	fmt.Printf("sync-in `%s` -> `%s`\n", filepath.Join(opt.Repo, dir), filepath.Join(opt.Repo, place))
 	for i, action := range actions {
-		sub := filepath.Join(action.Dir...)
-		path := filepath.Join(dir, sub)
-
 		var sel []string
 		for _, s := range action.Selection {
 			sel = append(sel, fmt.Sprintf("{file: %s; I: %t; C: %v; P: %v; V: %v}",
 				s.File, s.Ignore, s.Children, s.Properties, s.Values,
 			))
 		}
-		fmt.Printf("\t%4d %d; %-32s; sel(%02d): {%s}\n", i, action.Depth, path, len(action.Selection), strings.Join(sel, "; "))
+		fmt.Printf("\t%4d %d; %-24s; sel(%02d): {%s}\n", i, action.Depth, "`"+filepath.Join(action.Dir...)+"`", len(action.Selection), strings.Join(sel, "; "))
 	}
 	return nil
 }
@@ -327,7 +324,7 @@ func SyncInReadRepo(opt *Options) error {
 	for i, dir := range dirs {
 		places[i] = getDirPlace(dir)
 		sources[i] = SourceCache{}
-		a, err := syncInReadDir(opt, sources[i], []string{dir}, rules)
+		a, err := syncInReadDir(opt, sources[i], dir, []string{}, rules)
 		if err != nil {
 			//ERROR
 			continue
