@@ -336,7 +336,11 @@ func syncOutAnalyzeActions(actions []OutAction) []OutAction {
 					}
 				}
 				for _, prop := range sel.Properties {
-					properties[propItem{sel.Object, prop}] = OrderedOutAction{
+					item := propItem{sel.Object, prop}
+					if a, ok := properties[item]; ok && a.Action.Depth > action.Depth {
+						continue
+					}
+					properties[item] = OrderedOutAction{
 						Priority: i,
 						Action: OutAction{
 							Depth: action.Depth,
