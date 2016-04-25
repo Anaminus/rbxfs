@@ -435,6 +435,59 @@ var DefaultRuleDefs = &FuncDef{
 		"File": {
 			Args: []ArgType{ArgTypeFileName},
 			Func: func(opt *Options, args []Arg, path string) (sfile []string, err error) {
+				name := args[0].(ArgFileName)
+				files, err := ioutil.ReadDir(filepath.Join(opt.Repo, path))
+				if err != nil {
+					// ERROR
+					return
+				}
+				for _, file := range files {
+					if file.IsDir() {
+						continue
+					}
+					if name.Match(file.Name()) {
+						sfile = append(sfile, file.Name())
+					}
+				}
+
+				return
+			},
+		},
+		"Directory": {
+			Args: []ArgType{ArgTypeClass, ArgTypeFileName},
+			Func: func(opt *Options, args []Arg, path string) (sfile []string, err error) {
+				class := args[0].(ArgClass)
+				name := args[1].(ArgFileName)
+				dir := filepath.Join(opt.Repo, path)
+				files, err := ioutil.ReadDir(dir)
+				if err != nil {
+					// ERROR
+					return
+				}
+				for _, file := range files {
+					if !file.IsDir() {
+						continue
+					}
+					if !class.Name.Any {
+						className, err := readClassNameFile(filepath.Join(dir, file.Name()))
+						if err != nil {
+							continue
+						}
+
+						api := opt.API
+						if class.NoSub {
+							api = nil
+						}
+						if !inherits(api, rbxfile.NewInstance(className, nil), class.Name.Literal) {
+							continue
+						}
+					}
+
+					if name.Match(file.Name()) {
+						sfile = append(sfile, file.Name())
+					}
+				}
+
 				return
 			},
 		},
