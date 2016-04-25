@@ -117,13 +117,17 @@ func syncInAnalyzeActions(actions []InAction) []InAction {
 			path  string
 			child int
 		}
+		type propItem struct {
+			dir  string
+			prop string
+		}
 
 		children := map[childItem]OrderedInAction{}
-		properties := map[string]OrderedInAction{}
+		properties := map[propItem]OrderedInAction{}
 		for i, action := range actions {
-			sub := filepath.Join(action.Dir...)
+			dir := filepath.Join(action.Dir...)
 			for _, selection := range action.Selection {
-				path := filepath.Join(sub, selection.File)
+				path := filepath.Join(dir, selection.File)
 				for _, child := range selection.Children {
 					// Objects may conflict only if they are from the same
 					// source.
@@ -150,10 +154,11 @@ func syncInAnalyzeActions(actions []InAction) []InAction {
 					}
 				}
 				for _, prop := range selection.Properties {
-					if a, ok := properties[prop]; ok && a.Action.Depth > action.Depth {
+					item := propItem{dir, prop}
+					if a, ok := properties[item]; ok && a.Action.Depth > action.Depth {
 						continue
 					}
-					properties[prop] = OrderedInAction{
+					properties[item] = OrderedInAction{
 						Priority: i,
 						Action: InAction{
 							Depth: action.Depth,
@@ -167,12 +172,13 @@ func syncInAnalyzeActions(actions []InAction) []InAction {
 					}
 				}
 				for prop, value := range selection.Values {
-					// Properties conflict independently of the sources they
-					// are retrieved from.
-					if a, ok := properties[prop]; ok && a.Action.Depth > action.Depth {
+					// Properties conflict per directory, rather than per
+					// source.
+					item := propItem{dir, prop}
+					if a, ok := properties[item]; ok && a.Action.Depth > action.Depth {
 						continue
 					}
-					properties[prop] = OrderedInAction{
+					properties[item] = OrderedInAction{
 						Priority: i,
 						Action: InAction{
 							Depth: action.Depth,
