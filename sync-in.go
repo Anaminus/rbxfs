@@ -9,6 +9,11 @@ import (
 )
 
 func syncInReadDir(opt *Options, cache SourceCache, dir []string, rules []rulePair) (actions []InAction, err error) {
+	defs := opt.RuleDefs
+	if defs == nil {
+		defs = DefaultRuleDefs
+	}
+
 	children := map[string]bool{}
 	for _, pair := range rules {
 		jdir := filepath.Join(dir...)
