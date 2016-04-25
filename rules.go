@@ -164,69 +164,55 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dir str
 		return
 	}
 
-	sm := make([]SourceMap, len(sfile))
-	for i, name := range sfile {
+	sm := make([]SourceMap, 0, len(sfile))
+	for _, name := range sfile {
 		relname := filepath.Join(dir, name)
-		if _, ok := cache[relname]; ok {
-			continue
-		}
-
-		var format Format
-		switch ext := filepath.Ext(name); ext {
-		case ".rbxm":
-			format = &FormatRBXM{}
-		case ".rbxmx":
-			format = &FormatRBXMX{}
-		case ".json":
-			format = &FormatJSON{}
-		case ".xml":
-			format = &FormatXML{}
-		case ".bin":
-			format = &FormatBin{}
-		case ".lua":
-			format = &FormatLua{}
-		case ".txt":
-			format = &FormatText{}
-		default:
-			//error: pattern selected file with unsupported format
-		}
-		format.SetAPI(opt.API)
-
-		r, err := os.Open(filepath.Join(opt.Repo, relname))
-		if err != nil {
-			//error?: cannot open file
-		}
-		defer r.Close()
-		stat, err := r.Stat()
-		if err != nil {
-			//error?: cannot open file
-		}
-
-		scItem := SourceCacheItem{IsDir: stat.IsDir()}
-		if scItem.IsDir {
-			className, err := readClassNameFile(filepath.Join(opt.Repo, dir, name))
+		scItem, ok := cache[relname]
+		if !ok {
+			r, err := os.Open(filepath.Join(opt.Repo, relname))
 			if err != nil {
-				//ERROR: ignore directory?
+				return nil, err
 			}
-			obj := rbxfile.NewInstance(className, nil)
-			obj.SetName(name)
-			scItem.Source = &ItemSource{Children: []*rbxfile.Instance{obj}}
-		} else {
-			scItem.Source, err = format.Decode(r)
+			defer r.Close()
+			stat, err := r.Stat()
 			if err != nil {
-				//error?: error decoding file
+				return nil, err
 			}
-		}
 
-		cache[relname] = scItem
-		sm[i] = SourceMap{File: name, SourceCacheItem: scItem}
+			scItem.IsDir = stat.IsDir()
+			if scItem.IsDir {
+				className, err := readClassNameFile(filepath.Join(opt.Repo, dir, name))
+				if err != nil {
+					//ERROR: ignore directory?
+					continue
+				}
+				obj := rbxfile.NewInstance(className, nil)
+				obj.SetName(name)
+				scItem.Source = &ItemSource{Children: []*rbxfile.Instance{obj}}
+			} else {
+				format := GetFormatFromExt(filepath.Ext(name))
+				if format == nil {
+					err = fmt.Errorf("pattern selected file with unsupported format `%s`", filepath.Ext(name))
+					return nil, err
+				}
+				format.SetAPI(opt.API)
+				scItem.Source, err = format.Decode(r)
+				if err != nil {
+					//error?: error decoding file
+					return nil, fmt.Errorf("failed to decode file: %s", err)
+				}
+			}
+
+			cache[relname] = scItem
+		}
+		sm = append(sm, SourceMap{File: name, SourceCacheItem: scItem})
 	}
 
 	is, err = filterFn.Func(opt, pair.Filter.Args, sm)
 	if err != nil {
 		err = fmt.Errorf("filter error: %s", err.Error())
 	}
-	return
+	return is, err
 }
 
 const classNameFile = "ClassName"
