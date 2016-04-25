@@ -863,7 +863,5 @@ func getStdRules(opt *Options) (rules []rulePair, err error) {
 		rules = append(rules, r...)
 	}
 
-	rules = filterRuleType(rules, SyncOut)
-
 	return
 }
