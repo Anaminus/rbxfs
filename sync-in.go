@@ -3,6 +3,9 @@ package rbxfs
 import (
 	"errors"
 	"fmt"
+	"github.com/robloxapi/rbxfile"
+	"github.com/robloxapi/rbxfile/bin"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -292,7 +295,44 @@ func syncInVerifyActions(opt *Options, dir, place string, cache SourceCache, act
 	return nil
 }
 func syncInApplyActions(opt *Options, dir, place string, cache SourceCache, actions []InAction) error {
-	return nil
+	datamodel := rbxfile.NewInstance("DataModel", nil)
+	dirMap := map[string]*rbxfile.Instance{"": datamodel}
+	for _, action := range actions {
+		subdir := filepath.Join(action.Dir...)
+		for _, selection := range action.Selection {
+			if selection.Ignore {
+				continue
+			}
+
+			source := cache[filepath.Join(subdir, selection.File)]
+			if source.IsDir {
+				dirMap[filepath.Join(subdir, selection.File)] = source.Source.Children[selection.Children[0]]
+			}
+
+			parent := dirMap[subdir]
+			for _, child := range selection.Children {
+				source.Source.Children[child].SetParent(parent)
+			}
+			for _, prop := range selection.Properties {
+				parent.Properties[prop] = source.Source.Properties[prop]
+			}
+			for prop, value := range selection.Values {
+				parent.Properties[prop] = source.Source.Values[value]
+			}
+		}
+	}
+
+	root := &rbxfile.Root{
+		Instances: make([]*rbxfile.Instance, len(datamodel.Children)),
+	}
+	copy(root.Instances, datamodel.Children)
+	datamodel.RemoveAll()
+
+	f, _ := os.Create(filepath.Join(opt.Repo, "new-"+place))
+	err := bin.SerializePlace(f, opt.API, root)
+	f.Close()
+
+	return err
 }
 
 func syncInEncodeRoot() error { return nil }
