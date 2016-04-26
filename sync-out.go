@@ -7,7 +7,6 @@ import (
 	"github.com/robloxapi/rbxfile"
 	"github.com/robloxapi/rbxfile/bin"
 	"github.com/robloxapi/rbxfile/xml"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -498,7 +497,8 @@ func syncOutApplyActions(opt *Options, place, dir string, root *rbxfile.Root, ac
 			}
 			sel := action.Map.Selection[0]
 			obj := sel.Object.Children[sel.Children[0]]
-			if err := ioutil.WriteFile(filepath.Join(abspath, classNameFile), []byte(obj.ClassName), 0666); err != nil {
+
+			if err := writeAuxData(abspath, obj); err != nil {
 				fmt.Printf("ERROR (%d): %s\n", i, err)
 				continue
 			}

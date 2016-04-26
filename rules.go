@@ -2,6 +2,7 @@ package rbxfs
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/robloxapi/rbxapi"
@@ -181,12 +182,12 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 
 			scItem.IsDir = stat.IsDir()
 			if scItem.IsDir {
-				className, err := readClassNameFile(filepath.Join(opt.Repo, dirname, relname))
+				obj := rbxfile.NewInstance("", nil)
+				err := readAuxData(filepath.Join(opt.Repo, dirname, relname), obj)
 				if err != nil {
 					//ERROR: ignore directory?
 					continue
 				}
-				obj := rbxfile.NewInstance(className, nil)
 				obj.SetName(name)
 				scItem.Source = &ItemSource{Children: []*rbxfile.Instance{obj}}
 			} else {
@@ -232,6 +233,53 @@ func readClassNameFile(dir string) (className string, err error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+type auxData struct {
+	ClassName string `json:"class_name"`
+	Reference []byte `json:"reference"`
+	IsService bool   `json:"is_service"`
+}
+
+const auxDataFileName = "data"
+
+func writeAuxData(path string, obj *rbxfile.Instance) error {
+	data := auxData{
+		ClassName: obj.ClassName,
+		Reference: obj.Reference,
+		IsService: obj.IsService,
+	}
+	// ERROR?
+	b, _ := json.MarshalIndent(&data, "", "\t")
+	f, err := os.Create(filepath.Join(path, auxDataFileName))
+	if err != nil {
+		// ERROR
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(b)
+	// ERROR
+	return err
+}
+
+func readAuxData(path string, obj *rbxfile.Instance) error {
+	var data auxData
+	b, err := ioutil.ReadFile(filepath.Join(path, auxDataFileName))
+	if err != nil {
+		// ERROR
+		return err
+	}
+	err = json.Unmarshal(b, &data)
+	if err != nil {
+		// ERROR
+		return err
+	}
+
+	obj.ClassName = data.ClassName
+	obj.Reference = data.Reference
+	obj.IsService = data.IsService
+
+	return nil
 }
 
 func inherits(api *rbxapi.API, obj *rbxfile.Instance, className string) bool {
