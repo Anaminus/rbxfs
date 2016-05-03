@@ -91,6 +91,7 @@ func decodePlaceFile(name string, api *rbxapi.API) (root *rbxfile.Root, err erro
 		fallthrough
 	case ".rbxl", ".rbxlx":
 		c := bin.RobloxCodec{
+			API:               api,
 			ExcludeInvalidAPI: false,
 		}
 		if model {
@@ -102,6 +103,7 @@ func decodePlaceFile(name string, api *rbxapi.API) (root *rbxfile.Root, err erro
 			Decoder: c,
 			Encoder: c,
 			DecoderXML: xml.RobloxCodec{
+				API:               api,
 				ExcludeExternal:   false,
 				ExcludeInvalidAPI: false,
 				ExcludeReferent:   false,
@@ -115,7 +117,7 @@ func decodePlaceFile(name string, api *rbxapi.API) (root *rbxfile.Root, err erro
 		}
 		defer place.Close()
 
-		root, err := s.Deserialize(place, api)
+		root, err := s.Deserialize(place)
 		if err != nil {
 			//ERROR:
 			return nil, err
