@@ -220,25 +220,6 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 	return is, err
 }
 
-const classNameFile = "ClassName"
-const maxClassNameLength = 1 << 10
-
-func readClassNameFile(dir string) (className string, err error) {
-	name := filepath.Join(dir, classNameFile)
-	stat, err := os.Stat(name)
-	if err != nil {
-		return "", err
-	}
-	if stat.Size() > maxClassNameLength {
-		return "", errors.New("file too large")
-	}
-	b, err := ioutil.ReadFile(name)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
 type auxData struct {
 	ClassName string `json:"class_name"`
 	Reference string `json:"reference"`
@@ -521,8 +502,8 @@ var DefaultRuleDefs = &FuncDef{
 						continue
 					}
 					if !class.Name.Any {
-						className, err := readClassNameFile(filepath.Join(dir, file.Name()))
-						if err != nil {
+						aux := rbxfile.NewInstance("", nil)
+						if err := readAuxData(filepath.Join(dir, file.Name()), aux); err != nil {
 							continue
 						}
 
@@ -530,7 +511,7 @@ var DefaultRuleDefs = &FuncDef{
 						if class.NoSub {
 							api = nil
 						}
-						if !inherits(api, rbxfile.NewInstance(className, nil), class.Name.Literal) {
+						if !inherits(api, aux, class.Name.Literal) {
 							continue
 						}
 					}
