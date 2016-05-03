@@ -318,7 +318,6 @@ func syncInApplyActions(opt *Options, dir, place string, refs map[string]*rbxfil
 			}
 			for _, prop := range selection.Properties {
 				if source.Source.References[prop] {
-					ref := string(source.Source.Properties[prop].(rbxfile.ValueString))
 					if rbxfile.ResolveReference(refs, rbxfile.PropRef{
 						Instance:  parent,
 						Property:  prop,
