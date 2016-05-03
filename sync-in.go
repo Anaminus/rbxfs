@@ -3,6 +3,8 @@ package rbxfs
 import (
 	"errors"
 	"fmt"
+	"github.com/robloxapi/rbxapi"
+	"github.com/robloxapi/rbxapi/dump"
 	"github.com/robloxapi/rbxfile"
 	"github.com/robloxapi/rbxfile/bin"
 	"os"
@@ -333,6 +335,22 @@ func syncInApplyActions(opt *Options, dir, place string, refs map[string]*rbxfil
 			}
 		}
 	}
+
+	// Correct services based on predefined list.
+	// TODO: make this better (extract info from exe?)
+	var r func(*rbxapi.API, *rbxfile.Instance)
+	r = func(services *rbxapi.API, obj *rbxfile.Instance) {
+		if services.Classes[obj.ClassName] != nil {
+			obj.IsService = true
+		}
+		for _, child := range obj.Children {
+			r(services, child)
+		}
+	}
+	f, _ := os.Open(filepath.Join(opt.Repo, ProjectMetaDir, "services"))
+	services, _ := dump.Decode(f)
+	f.Close()
+	r(services, datamodel)
 
 	root := &rbxfile.Root{
 		Instances: make([]*rbxfile.Instance, len(datamodel.Children)),
