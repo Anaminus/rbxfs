@@ -85,6 +85,8 @@ type ItemSource struct {
 	Properties map[string]rbxfile.Value
 	// property values not mapped to any particular property
 	Values []rbxfile.Value
+	// properties whose values are actually unresolved references
+	References map[string]bool
 }
 
 // Maps a file name to an ItemSource. Name is relative to top directory of
@@ -142,7 +144,7 @@ func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (o
 }
 
 // path: relative to opt.Repo
-func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname, subdir string) (is []InSelection, err error) {
+func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname, subdir string, refs map[string]*rbxfile.Instance) (is []InSelection, err error) {
 	if pair.SyncType != SyncIn {
 		err = errors.New("expected sync-in function pair")
 		return
@@ -182,12 +184,13 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 
 			scItem.IsDir = stat.IsDir()
 			if scItem.IsDir {
-				obj := rbxfile.NewInstance("", nil)
+				obj := &rbxfile.Instance{Properties: make(map[string]rbxfile.Value, 0)}
 				err := readAuxData(filepath.Join(opt.Repo, dirname, relname), obj)
 				if err != nil {
 					//ERROR: ignore directory?
 					continue
 				}
+				rbxfile.GetReference(obj, refs)
 				obj.SetName(name)
 				scItem.Source = &ItemSource{Children: []*rbxfile.Instance{obj}}
 			} else {
@@ -197,6 +200,7 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 					return nil, err
 				}
 				format.SetAPI(opt.API)
+				format.SetReferences(refs)
 				scItem.Source, err = format.Decode(r)
 				if err != nil {
 					//error?: error decoding file
@@ -237,7 +241,7 @@ func readClassNameFile(dir string) (className string, err error) {
 
 type auxData struct {
 	ClassName string `json:"class_name"`
-	Reference []byte `json:"reference"`
+	Reference string `json:"reference"`
 	IsService bool   `json:"is_service"`
 }
 

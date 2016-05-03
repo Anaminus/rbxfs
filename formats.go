@@ -80,11 +80,25 @@ func (err ErrFmtDecode) Error() string {
 	return fmt.Sprintf("failed to decode format: %s", err.Err.Error())
 }
 
+func populateRefs(refs map[string]*rbxfile.Instance, objs []*rbxfile.Instance) {
+	if refs == nil {
+		return
+	}
+	for _, obj := range objs {
+		rbxfile.GetReference(obj, refs)
+	}
+	for _, obj := range objs {
+		populateRefs(refs, obj.Children)
+	}
+}
+
 type Format interface {
 	Name() string
 	Ext() string
 	API() *rbxapi.API
 	SetAPI(api *rbxapi.API)
+	References() map[string]*rbxfile.Instance
+	SetReferences(map[string]*rbxfile.Instance)
 	// CanEncode returns whether the selections can be encoded.
 	CanEncode(selections []OutSelection) bool
 	// Encode encodes the selection in a format written to w.
@@ -94,7 +108,8 @@ type Format interface {
 }
 
 type FormatRBXM struct {
-	api *rbxapi.API
+	api  *rbxapi.API
+	refs map[string]*rbxfile.Instance
 }
 
 func (FormatRBXM) Name() string {
@@ -108,6 +123,12 @@ func (f FormatRBXM) API() *rbxapi.API {
 }
 func (f *FormatRBXM) SetAPI(api *rbxapi.API) {
 	f.api = api
+}
+func (f FormatRBXM) References() map[string]*rbxfile.Instance {
+	return f.refs
+}
+func (f *FormatRBXM) SetReferences(refs map[string]*rbxfile.Instance) {
+	f.refs = refs
 }
 func (FormatRBXM) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -151,11 +172,13 @@ func (f FormatRBXM) Decode(r io.Reader) (is *ItemSource, err error) {
 		return
 	}
 	is = &ItemSource{Children: root.Instances}
+	populateRefs(f.refs, root.Instances)
 	return
 }
 
 type FormatRBXMX struct {
-	api *rbxapi.API
+	api  *rbxapi.API
+	refs map[string]*rbxfile.Instance
 }
 
 func (FormatRBXMX) Name() string {
@@ -169,6 +192,12 @@ func (f FormatRBXMX) API() *rbxapi.API {
 }
 func (f *FormatRBXMX) SetAPI(api *rbxapi.API) {
 	f.api = api
+}
+func (f FormatRBXMX) References() map[string]*rbxfile.Instance {
+	return f.refs
+}
+func (f *FormatRBXMX) SetReferences(refs map[string]*rbxfile.Instance) {
+	f.refs = refs
 }
 func (FormatRBXMX) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -212,11 +241,13 @@ func (f FormatRBXMX) Decode(r io.Reader) (is *ItemSource, err error) {
 		return
 	}
 	is = &ItemSource{Children: root.Instances}
+	populateRefs(f.refs, root.Instances)
 	return
 }
 
 type FormatRBXL struct {
-	api *rbxapi.API
+	api  *rbxapi.API
+	refs map[string]*rbxfile.Instance
 }
 
 func (FormatRBXL) Name() string {
@@ -230,6 +261,12 @@ func (f FormatRBXL) API() *rbxapi.API {
 }
 func (f *FormatRBXL) SetAPI(api *rbxapi.API) {
 	f.api = api
+}
+func (f FormatRBXL) References() map[string]*rbxfile.Instance {
+	return f.refs
+}
+func (f *FormatRBXL) SetReferences(refs map[string]*rbxfile.Instance) {
+	f.refs = refs
 }
 func (FormatRBXL) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -273,11 +310,13 @@ func (f FormatRBXL) Decode(r io.Reader) (is *ItemSource, err error) {
 		return
 	}
 	is = &ItemSource{Children: root.Instances}
+	populateRefs(f.refs, root.Instances)
 	return
 }
 
 type FormatRBXLX struct {
-	api *rbxapi.API
+	api  *rbxapi.API
+	refs map[string]*rbxfile.Instance
 }
 
 func (FormatRBXLX) Name() string {
@@ -291,6 +330,12 @@ func (f FormatRBXLX) API() *rbxapi.API {
 }
 func (f *FormatRBXLX) SetAPI(api *rbxapi.API) {
 	f.api = api
+}
+func (f FormatRBXLX) References() map[string]*rbxfile.Instance {
+	return f.refs
+}
+func (f *FormatRBXLX) SetReferences(refs map[string]*rbxfile.Instance) {
+	f.refs = refs
 }
 func (FormatRBXLX) CanEncode(sel []OutSelection) bool {
 	for _, s := range sel {
@@ -334,11 +379,13 @@ func (f FormatRBXLX) Decode(r io.Reader) (is *ItemSource, err error) {
 		return
 	}
 	is = &ItemSource{Children: root.Instances}
+	populateRefs(f.refs, root.Instances)
 	return
 }
 
 type FormatJSON struct {
-	api *rbxapi.API
+	api  *rbxapi.API
+	refs map[string]*rbxfile.Instance
 }
 
 func (FormatJSON) Name() string {
@@ -352,6 +399,12 @@ func (f FormatJSON) API() *rbxapi.API {
 }
 func (f *FormatJSON) SetAPI(api *rbxapi.API) {
 	f.api = api
+}
+func (f FormatJSON) References() map[string]*rbxfile.Instance {
+	return f.refs
+}
+func (f *FormatJSON) SetReferences(refs map[string]*rbxfile.Instance) {
+	f.refs = refs
 }
 func (FormatJSON) CanEncode(sel []OutSelection) bool {
 	if len(sel) > 1 {
@@ -367,7 +420,10 @@ func (f FormatJSON) Encode(w io.Writer, selections []OutSelection) error {
 		return ErrFmtSelection{f.Name()}
 	}
 
-	_refs := map[string]*rbxfile.Instance{}
+	refs := f.refs
+	if refs == nil {
+		refs = map[string]*rbxfile.Instance{}
+	}
 
 	obj := selections[0].Object
 	names := selections[0].Properties
@@ -378,10 +434,9 @@ func (f FormatJSON) Encode(w io.Writer, selections []OutSelection) error {
 			continue
 		}
 
-		// REFS
 		properties[name] = map[string]interface{}{
 			"type":  value.Type().String(),
-			"value": rbxfile_json.ValueToJSONInterface(value, _refs),
+			"value": rbxfile_json.ValueToJSONInterface(value, refs),
 		}
 	}
 
@@ -413,21 +468,30 @@ func (f FormatJSON) Decode(r io.Reader) (is *ItemSource, err error) {
 		return nil, ErrFmtDecode{err}
 	}
 
-	// REFS
+	if f.refs == nil {
+		f.refs = map[string]*rbxfile.Instance{}
+	}
+	var propRefs []rbxfile.PropRef
 	inst, _ := rbxfile_json.InstanceFromJSONInterface(
 		map[string]interface{}{
 			"class_name": "",
 			"properties": iprops,
 		},
-		map[string]*rbxfile.Instance{},
-		&[]rbxfile_json.PropRef{},
+		f.refs,
+		&propRefs,
 	)
+	refs := make(map[string]bool, len(propRefs))
+	for _, propRef := range propRefs {
+		inst.Properties[propRef.Property] = rbxfile.ValueString(propRef.Reference)
+		refs[propRef.Property] = true
+	}
 
-	return &ItemSource{Properties: inst.Properties}, nil
+	return &ItemSource{Properties: inst.Properties, References: refs}, nil
 }
 
 type FormatXML struct {
-	api *rbxapi.API
+	api  *rbxapi.API
+	refs map[string]*rbxfile.Instance
 }
 
 func (FormatXML) Name() string {
@@ -441,6 +505,12 @@ func (f FormatXML) API() *rbxapi.API {
 }
 func (f *FormatXML) SetAPI(api *rbxapi.API) {
 	f.api = api
+}
+func (f FormatXML) References() map[string]*rbxfile.Instance {
+	return f.refs
+}
+func (f *FormatXML) SetReferences(refs map[string]*rbxfile.Instance) {
+	f.refs = refs
 }
 func (FormatXML) CanEncode(sel []OutSelection) bool {
 	if len(sel) > 1 {
@@ -473,6 +543,11 @@ func (f FormatBin) API() *rbxapi.API {
 }
 func (f *FormatBin) SetAPI(api *rbxapi.API) {
 	f.api = api
+}
+func (f FormatBin) References() map[string]*rbxfile.Instance {
+	return nil
+}
+func (f *FormatBin) SetReferences(refs map[string]*rbxfile.Instance) {
 }
 func (FormatBin) CanEncode(sel []OutSelection) bool {
 	if len(sel) != 1 ||
@@ -525,6 +600,11 @@ func (f FormatLua) API() *rbxapi.API {
 func (f *FormatLua) SetAPI(api *rbxapi.API) {
 	f.api = api
 }
+func (f FormatLua) References() map[string]*rbxfile.Instance {
+	return nil
+}
+func (f *FormatLua) SetReferences(refs map[string]*rbxfile.Instance) {
+}
 func (FormatLua) CanEncode(sel []OutSelection) bool {
 	if len(sel) != 1 ||
 		len(sel[0].Children) != 0 ||
@@ -575,6 +655,11 @@ func (f FormatText) API() *rbxapi.API {
 }
 func (f *FormatText) SetAPI(api *rbxapi.API) {
 	f.api = api
+}
+func (f FormatText) References() map[string]*rbxfile.Instance {
+	return nil
+}
+func (f *FormatText) SetReferences(refs map[string]*rbxfile.Instance) {
 }
 func (FormatText) CanEncode(sel []OutSelection) bool {
 	if len(sel) != 1 ||

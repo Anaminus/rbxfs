@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []string, rules []rulePair) (actions []InAction, err error) {
+func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []string, rules []rulePair, refs map[string]*rbxfile.Instance) (actions []InAction, err error) {
 	defs := opt.RuleDefs
 	if defs == nil {
 		defs = DefaultRuleDefs
@@ -20,7 +20,7 @@ func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []str
 	children := map[string]bool{}
 	jdir := filepath.Join(subdir...)
 	for _, pair := range rules {
-		is, err := defs.CallIn(opt, cache, pair, dirname, jdir)
+		is, err := defs.CallIn(opt, cache, pair, dirname, jdir, refs)
 		if err != nil {
 			//ERROR
 			return nil, err
@@ -54,7 +54,7 @@ func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []str
 		sub := make([]string, len(subdir)+1)
 		copy(sub, subdir)
 		sub[len(sub)-1] = name
-		a, err := syncInReadDir(opt, cache, dirname, sub, rules)
+		a, err := syncInReadDir(opt, cache, dirname, sub, rules, refs)
 		if err != nil {
 			//ERROR
 			return nil, err
@@ -281,7 +281,7 @@ func syncInAnalyzeActions(actions []InAction) []InAction {
 	return actions
 }
 
-func syncInVerifyActions(opt *Options, dir, place string, cache SourceCache, actions []InAction) error {
+func syncInVerifyActions(opt *Options, dir, place string, refs map[string]*rbxfile.Instance, cache SourceCache, actions []InAction) error {
 	fmt.Printf("sync-in `%s` -> `%s`\n", filepath.Join(opt.Repo, dir), filepath.Join(opt.Repo, place))
 	for i, action := range actions {
 		var sel []string
@@ -294,7 +294,8 @@ func syncInVerifyActions(opt *Options, dir, place string, cache SourceCache, act
 	}
 	return nil
 }
-func syncInApplyActions(opt *Options, dir, place string, cache SourceCache, actions []InAction) error {
+
+func syncInApplyActions(opt *Options, dir, place string, refs map[string]*rbxfile.Instance, cache SourceCache, actions []InAction) error {
 	datamodel := rbxfile.NewInstance("DataModel", nil)
 	dirMap := map[string]*rbxfile.Instance{"": datamodel}
 	for _, action := range actions {
@@ -314,7 +315,18 @@ func syncInApplyActions(opt *Options, dir, place string, cache SourceCache, acti
 				source.Source.Children[child].SetParent(parent)
 			}
 			for _, prop := range selection.Properties {
-				parent.Properties[prop] = source.Source.Properties[prop]
+				if source.Source.References[prop] {
+					ref := string(source.Source.Properties[prop].(rbxfile.ValueString))
+					if rbxfile.ResolveReference(refs, rbxfile.PropRef{
+						Instance:  parent,
+						Property:  prop,
+						Reference: string(source.Source.Properties[prop].(rbxfile.ValueString)),
+					}) {
+						continue
+					}
+				} else {
+					parent.Properties[prop] = source.Source.Properties[prop]
+				}
 			}
 			for prop, value := range selection.Values {
 				parent.Properties[prop] = source.Source.Values[value]
@@ -360,11 +372,13 @@ func SyncInReadRepo(opt *Options) error {
 	places := make([]string, len(dirs))
 	sources := make([]SourceCache, len(dirs))
 	actions := make([][]InAction, len(dirs))
+	refs := make([]map[string]*rbxfile.Instance, len(dirs))
 
 	for i, dir := range dirs {
 		places[i] = getDirPlace(dir)
 		sources[i] = SourceCache{}
-		a, err := syncInReadDir(opt, sources[i], dir, []string{}, rules)
+		refs[i] = map[string]*rbxfile.Instance{}
+		a, err := syncInReadDir(opt, sources[i], dir, []string{}, rules, refs[i])
 		if err != nil {
 			//ERROR
 			continue
@@ -373,7 +387,7 @@ func SyncInReadRepo(opt *Options) error {
 	}
 
 	for i, dir := range dirs {
-		err := syncInVerifyActions(opt, dir, places[i], sources[i], actions[i])
+		err := syncInVerifyActions(opt, dir, places[i], refs[i], sources[i], actions[i])
 		if err != nil {
 			//ERROR:
 			continue
@@ -381,7 +395,7 @@ func SyncInReadRepo(opt *Options) error {
 	}
 
 	for i, dir := range dirs {
-		err := syncInApplyActions(opt, dir, places[i], sources[i], actions[i])
+		err := syncInApplyActions(opt, dir, places[i], refs[i], sources[i], actions[i])
 		if err != nil {
 			//ERROR:
 			continue
