@@ -480,7 +480,7 @@ func syncOutVerifyActions(opt *Options, place, dir string, root *rbxfile.Root, a
 }
 
 func syncOutApplyActions(opt *Options, place, dir string, root *rbxfile.Root, actions []OutAction) error {
-	if err := os.Mkdir(filepath.Join(opt.Repo, dir), 0666); !os.IsExist(err) {
+	if err := os.Mkdir(filepath.Join(opt.Repo, dir), 0666); err != nil && !os.IsExist(err) {
 		fmt.Printf("ERROR: %s\n", err)
 		return nil
 	}
@@ -493,7 +493,7 @@ func syncOutApplyActions(opt *Options, place, dir string, root *rbxfile.Root, ac
 		path := filepath.Join(dir, sub, action.Map.File.Name)
 		abspath := filepath.Join(opt.Repo, path)
 		if action.Map.File.IsDir {
-			if err := os.Mkdir(abspath, 0666); !os.IsExist(err) {
+			if err := os.Mkdir(abspath, 0666); err != nil && !os.IsExist(err) {
 				fmt.Printf("ERROR (%d): %s\n", i, err)
 				continue
 			}
