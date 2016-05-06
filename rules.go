@@ -143,7 +143,6 @@ func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (o
 	return
 }
 
-// path: relative to opt.Repo
 func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname, subdir string, refs map[string]*rbxfile.Instance) (is []InSelection, err error) {
 	if pair.SyncType != SyncIn {
 		err = errors.New("expected sync-in function pair")
