@@ -508,6 +508,11 @@ var DefaultRuleDefs = &FuncDef{
 						if err := readAuxData(filepath.Join(dir, file.Name()), aux); err != nil {
 							continue
 						}
+						if aux.ClassName == "" {
+							continue
+						}
+						// Ignore directory if aux data is invalid or cannot
+						// be read.
 
 						api := opt.API
 						if class.NoSub {
