@@ -136,6 +136,7 @@ func syncOutReadPlace(opt *Options, place string, rules []rulePair) (root *rbxfi
 	}
 
 	datamodel := rbxfile.NewInstance("DataModel", nil)
+	datamodel.SetName("DataModel")
 	for i, obj := range root.Instances {
 		datamodel.AddChildAt(i, obj)
 	}
