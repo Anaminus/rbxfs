@@ -187,9 +187,8 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 			scItem.IsDir = stat.IsDir()
 			if scItem.IsDir {
 				obj := &rbxfile.Instance{Properties: make(map[string]rbxfile.Value, 0)}
-				err := readAuxData(filepath.Join(opt.Repo, dirname, relname), obj)
-				if err != nil {
-					//ERROR: ignore directory?
+				if err := readAuxData(filepath.Join(opt.Repo, dirname, relname), obj); err != nil {
+					// Ignore directory.
 					continue
 				}
 				rbxfile.GetReference(obj, refs)
