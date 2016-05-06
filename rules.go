@@ -165,6 +165,9 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 		err = fmt.Errorf("pattern error: %s", err.Error())
 		return
 	}
+	if len(sfile) == 0 {
+		return
+	}
 
 	sm := make([]SourceMap, 0, len(sfile))
 	for _, name := range sfile {
