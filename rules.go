@@ -419,10 +419,21 @@ var DefaultRuleDefs = &FuncDef{
 					return nil, errors.New("property selections incompatible with filter")
 				}
 
+			loop:
 				for _, n := range sobj {
 					child := obj.Children[n]
 					if !isValidFileName(child.Name(), true) {
-						continue
+						continue loop
+					}
+					for i, c := range obj.Children {
+						if i == n {
+							continue
+						}
+						if c.Name() == child.Name() {
+							// Fail if child shares its name with any other
+							// sibling.
+							continue loop
+						}
 					}
 					om = append(om, OutMap{
 						File:      FileDef{Name: child.Name(), IsDir: true},
