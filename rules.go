@@ -110,26 +110,55 @@ type FuncDef struct {
 	InFilter   map[string]InFilter
 }
 
+type ErrSyncFunc struct {
+	SyncType SyncType
+	FuncType FuncType
+	Name     string
+	Err      error
+}
+
+func (err ErrSyncFunc) Error() string {
+	return fmt.Sprintf("%s-%s function %q: %s", err.SyncType, err.FuncType, err.Name, err.Err.Error())
+}
+
+type ErrUnknownSyncFunc struct {
+	SyncType SyncType
+	FuncType FuncType
+	Name     string
+}
+
+func (err ErrUnknownSyncFunc) Error() string {
+	return fmt.Sprintf("unknown %s-%s function %q", err.SyncType, err.FuncType, err.Name)
+}
+
+type ErrSyncPair struct {
+	Expected, Got SyncType
+}
+
+func (err ErrSyncPair) Error() string {
+	return fmt.Sprintf("expected sync-%s function pair, got sync-%s", err.Expected, err.Got)
+}
+
 func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (om []OutMap, err error) {
 	if pair.SyncType != SyncOut {
-		err = errors.New("expected sync-out function pair")
+		err = ErrSyncPair{Expected: SyncOut, Got: pair.SyncType}
 		return
 	}
 
 	patternFn, ok := fd.OutPattern[pair.Pattern.Name]
 	if !ok {
-		err = errors.New("unknown pattern function")
+		err = ErrUnknownSyncFunc{SyncType: SyncOut, FuncType: Pattern, Name: pair.Pattern.Name}
 		return
 	}
 	filterFn, ok := fd.OutFilter[pair.Filter.Name]
 	if !ok {
-		err = errors.New("unknown filter function")
+		err = ErrUnknownSyncFunc{SyncType: SyncOut, FuncType: Filter, Name: pair.Filter.Name}
 		return
 	}
 
 	sobj, sprop, err := patternFn.Func(opt, pair.Pattern.Args, obj)
 	if err != nil {
-		err = fmt.Errorf("pattern error: %s", err.Error())
+		err = ErrSyncFunc{SyncType: SyncOut, FuncType: Pattern, Name: pair.Pattern.Name, Err: err}
 		return
 	}
 	if len(sobj) == 0 && len(sprop) == 0 {
@@ -138,37 +167,38 @@ func (fd FuncDef) CallOut(opt *Options, pair rulePair, obj *rbxfile.Instance) (o
 
 	om, err = filterFn.Func(opt, pair.Filter.Args, obj, sobj, sprop)
 	if err != nil {
-		err = fmt.Errorf("filter error: %s", err.Error())
+		err = ErrSyncFunc{SyncType: SyncOut, FuncType: Filter, Name: pair.Filter.Name, Err: err}
 	}
 	return
 }
 
 func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname, subdir string, refs map[string]*rbxfile.Instance) (is []InSelection, err error) {
 	if pair.SyncType != SyncIn {
-		err = errors.New("expected sync-in function pair")
+		err = ErrSyncPair{Expected: SyncIn, Got: pair.SyncType}
 		return
 	}
 
 	patternFn, ok := fd.InPattern[pair.Pattern.Name]
 	if !ok {
-		err = errors.New("unknown pattern function")
+		err = ErrUnknownSyncFunc{SyncType: SyncIn, FuncType: Pattern, Name: pair.Pattern.Name}
 		return
 	}
 	filterFn, ok := fd.InFilter[pair.Filter.Name]
 	if !ok {
-		err = errors.New("unknown filter function")
+		err = ErrUnknownSyncFunc{SyncType: SyncIn, FuncType: Filter, Name: pair.Filter.Name}
 		return
 	}
 
 	sfile, err := patternFn.Func(opt, pair.Pattern.Args, filepath.Join(dirname, subdir))
 	if err != nil {
-		err = fmt.Errorf("pattern error: %s", err.Error())
+		err = ErrSyncFunc{SyncType: SyncIn, FuncType: Pattern, Name: pair.Pattern.Name, Err: err}
 		return
 	}
 	if len(sfile) == 0 {
 		return
 	}
 
+	errs := make(ErrsFile, 0, len(sfile))
 	sm := make([]SourceMap, 0, len(sfile))
 	for _, name := range sfile {
 		relname := filepath.Join(subdir, name)
@@ -176,12 +206,14 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 		if !ok {
 			r, err := os.Open(filepath.Join(opt.Repo, dirname, relname))
 			if err != nil {
-				return nil, err
+				errs = append(errs, &ErrFile{FileName: relname, Errors: []error{err}})
+				continue
 			}
 			defer r.Close()
 			stat, err := r.Stat()
 			if err != nil {
-				return nil, err
+				errs = append(errs, &ErrFile{FileName: relname, Errors: []error{err}})
+				continue
 			}
 
 			scItem.IsDir = stat.IsDir()
@@ -197,15 +229,17 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 			} else {
 				format := GetFormatFromExt(filepath.Ext(name))
 				if format == nil {
-					err = fmt.Errorf("pattern selected file with unsupported format `%s`", filepath.Ext(name))
-					return nil, err
+					err := ErrSyncFunc{SyncType: SyncIn, FuncType: Pattern, Name: pair.Pattern.Name, Err: ErrUnsupportedFormat{Format: filepath.Ext(name)}}
+					errs = append(errs, &ErrFile{FileName: relname, Errors: []error{err}})
+					continue
 				}
 				format.SetAPI(opt.API)
 				format.SetReferences(refs)
+				var err error
 				scItem.Source, err = format.Decode(r)
 				if err != nil {
-					//error?: error decoding file
-					return nil, fmt.Errorf("failed to decode file: %s", err)
+					errs = append(errs, &ErrFile{FileName: relname, Errors: []error{err}})
+					continue
 				}
 			}
 
@@ -214,9 +248,13 @@ func (fd FuncDef) CallIn(opt *Options, cache SourceCache, pair rulePair, dirname
 		sm = append(sm, SourceMap{File: name, SourceCacheItem: scItem})
 	}
 
+	if len(errs) > 0 {
+		return nil, errs
+	}
+
 	is, err = filterFn.Func(opt, pair.Filter.Args, sm)
 	if err != nil {
-		err = fmt.Errorf("filter error: %s", err.Error())
+		err = ErrSyncFunc{SyncType: SyncIn, FuncType: Filter, Name: pair.Filter.Name, Err: err}
 	}
 	return is, err
 }
@@ -235,16 +273,16 @@ func writeAuxData(path string, obj *rbxfile.Instance) error {
 		Reference: obj.Reference,
 		IsService: obj.IsService,
 	}
-	// ERROR?
-	b, _ := json.MarshalIndent(&data, "", "\t")
+	b, err := json.MarshalIndent(&data, "", "\t")
+	if err != nil {
+		return err
+	}
 	f, err := os.Create(filepath.Join(path, auxDataFileName))
 	if err != nil {
-		// ERROR
 		return err
 	}
 	defer f.Close()
 	_, err = f.Write(b)
-	// ERROR
 	return err
 }
 
@@ -252,12 +290,10 @@ func readAuxData(path string, obj *rbxfile.Instance) error {
 	var data auxData
 	b, err := ioutil.ReadFile(filepath.Join(path, auxDataFileName))
 	if err != nil {
-		// ERROR
 		return err
 	}
 	err = json.Unmarshal(b, &data)
 	if err != nil {
-		// ERROR
 		return err
 	}
 
@@ -364,14 +400,12 @@ var DefaultRuleDefs = &FuncDef{
 
 				format := GetFormatFromExt(filepath.Ext(name))
 				if format == nil {
-					return nil, errors.New("unsupported file extension for " + name)
+					return nil, ErrUnsupportedFormat{Format: filepath.Ext(name)}
 				}
 
 				sel := []OutSelection{{Object: obj, Children: sobj, Properties: sprop}}
 				if !format.CanEncode(sel) {
-					// ErrFormat{nobj, nprop, nval, Format}
-					// return
-					return nil, errors.New("selection not supported by format")
+					return nil, ErrFormatSelection{Format: format.Name()}
 				}
 
 				om = []OutMap{OutMap{File: FileDef{Name: name, IsDir: false}, Selection: sel}}
@@ -382,7 +416,7 @@ var DefaultRuleDefs = &FuncDef{
 			Args: []ArgType{},
 			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				if len(sprop) > 0 {
-					return nil, errors.New("properties not supported")
+					return nil, errors.New("property selections incompatible with filter")
 				}
 
 				for _, n := range sobj {
@@ -403,7 +437,7 @@ var DefaultRuleDefs = &FuncDef{
 			Args: []ArgType{ArgTypeString},
 			Func: func(opt *Options, args []Arg, obj *rbxfile.Instance, sobj []int, sprop []string) (om []OutMap, err error) {
 				if len(sobj) > 0 {
-					return nil, errors.New("objects not supported")
+					return nil, errors.New("object selections incompatible with filter")
 				}
 
 				ext := strings.ToLower(string(args[0].(ArgString)))
@@ -421,7 +455,7 @@ var DefaultRuleDefs = &FuncDef{
 					format = &FormatText{}
 					typ = rbxfile.TypeString
 				default:
-					return nil, errors.New("unsupported format")
+					return nil, ErrUnsupportedFormat{Format: ext}
 				}
 
 				for _, name := range sprop {
@@ -472,7 +506,6 @@ var DefaultRuleDefs = &FuncDef{
 				name := args[0].(ArgFileName)
 				files, err := ioutil.ReadDir(filepath.Join(opt.Repo, path))
 				if err != nil {
-					// ERROR
 					return
 				}
 				for _, file := range files {
@@ -495,7 +528,6 @@ var DefaultRuleDefs = &FuncDef{
 				dir := filepath.Join(opt.Repo, path)
 				files, err := ioutil.ReadDir(dir)
 				if err != nil {
-					// ERROR
 					return
 				}
 				for _, file := range files {
@@ -538,8 +570,7 @@ var DefaultRuleDefs = &FuncDef{
 				for _, m := range sm {
 					if len(m.Source.Properties) > 0 ||
 						len(m.Source.Values) > 0 {
-						// error: source not compatible with function
-						return
+						return nil, errors.New("property and value sources incompatible with filter")
 					}
 				}
 				is = make([]InSelection, len(sm))
@@ -561,8 +592,7 @@ var DefaultRuleDefs = &FuncDef{
 				for _, m := range sm {
 					if len(m.Source.Children) > 0 ||
 						len(m.Source.Values) > 0 {
-						// error: source not compatible with function
-						return
+						return nil, errors.New("children and value sources incompatible with filter")
 					}
 				}
 				is = make([]InSelection, len(sm))
@@ -585,15 +615,13 @@ var DefaultRuleDefs = &FuncDef{
 			Func: func(opt *Options, args []Arg, sm []SourceMap) (is []InSelection, err error) {
 				name := string(args[0].(ArgString))
 				if len(sm) != 1 {
-					// error: must match exactly one file
-					return
+					return nil, errors.New("source must match exactly one file")
 				}
 				m := sm[0]
 				if len(m.Source.Children) > 0 ||
 					len(m.Source.Properties) > 0 ||
 					len(m.Source.Values) != 1 {
-					// error: source not compatible with function
-					return
+					return nil, errors.New("source must contain only one value")
 				}
 				is = []InSelection{
 					InSelection{
@@ -611,8 +639,7 @@ var DefaultRuleDefs = &FuncDef{
 					if len(m.Source.Children) > 0 ||
 						len(m.Source.Properties) > 0 ||
 						len(m.Source.Values) != 1 {
-						// error: source not compatible with function
-						return
+						return nil, errors.New("source must contain only one value")
 					}
 				}
 				is = make([]InSelection, len(sm))
@@ -708,13 +735,32 @@ func (r rulePair) String() string {
 	)
 }
 
+// ErrParseRule is an error occurring when parsing a particular line of a rule
+// file.
+type ErrParseRule struct {
+	Line int
+	Err  error
+}
+
+func (err ErrParseRule) Error() string {
+	return fmt.Sprintf("line %d: %s", err.Line, err.Err.Error())
+}
+
+// ErrsParseRule is an error containing a number of *ErrParseRule items.
+type ErrsParseRule []*ErrParseRule
+
+func (err ErrsParseRule) Error() string {
+	return fmt.Sprintf("%d errors when parsing rules", len(err))
+}
+
 type ruleParser struct {
 	defs  *FuncDef
 	r     io.Reader
 	depth int
-	err   error
+	err   error // error per line
 	line  int
 	funcs []rulePair
+	errs  ErrsParseRule // errors over all lines
 }
 
 func (*ruleParser) ident(s string) string {
@@ -727,15 +773,6 @@ func (*ruleParser) ident(s string) string {
 	return ""
 }
 
-type ErrRuleParser struct {
-	Line int
-	Err  error
-}
-
-func (err ErrRuleParser) Error() string {
-	return fmt.Sprintf("line %d: %s", err.Line, err.Err.Error())
-}
-
 func (d *ruleParser) parseRules() (rp []rulePair, err error) {
 	s := bufio.NewScanner(d.r)
 	s.Split(bufio.ScanLines)
@@ -743,17 +780,16 @@ func (d *ruleParser) parseRules() (rp []rulePair, err error) {
 	for s.Scan() {
 		d.readLine(s.Text())
 		if d.err != nil {
-			goto Error
+			d.errs = append(d.errs, &ErrParseRule{Line: d.line, Err: d.err})
+			d.err = nil
 		}
 		d.line++
 	}
 	if s.Err() != nil {
-		d.err = s.Err()
+		d.errs = append(d.errs, &ErrParseRule{Line: d.line, Err: s.Err()})
 	}
-Error:
-	if d.err != nil {
-		err = ErrRuleParser{Line: d.line, Err: d.err}
-		return
+	if len(d.errs) > 0 {
+		err = d.errs
 	}
 	rp = d.funcs
 	return
@@ -925,21 +961,35 @@ func filterRuleType(rules []rulePair, typ SyncType) (out []rulePair) {
 }
 
 func getStdRules(opt *Options) (rules []rulePair, err error) {
-	r, err := parseRuleFile(opt, 1, globalRulePath())
-	if err != nil {
-		//ERROR:
-		fmt.Println("global rules:", err)
-	} else {
+	errs := make(ErrsFile, 0, 2)
+	for i, path := range []string{globalRulePath(), projectRulePath(opt.Repo)} {
+		r, err := parseRuleFile(opt, i+1, path)
+		if err != nil {
+			switch i {
+			case 0:
+				path = "(global rules)"
+			case 1:
+				path = "(project rules)"
+			}
+
+			ef := &ErrFile{FileName: path}
+
+			switch err := err.(type) {
+			case ErrsParseRule:
+				ef.Errors = make([]error, len(err))
+				for i, e := range err {
+					ef.Errors[i] = e
+				}
+			default:
+				ef.Errors = []error{err}
+			}
+
+			errs = append(errs, ef)
+			continue
+		}
 		rules = append(rules, r...)
 	}
 
-	r, err = parseRuleFile(opt, 2, projectRulePath(opt.Repo))
-	if err != nil {
-		//ERROR:
-		fmt.Println("project rules:", err)
-	} else {
-		rules = append(rules, r...)
-	}
-
+	err = errs
 	return
 }

@@ -1,7 +1,6 @@
 package rbxfs
 
 import (
-	"errors"
 	"fmt"
 	"github.com/robloxapi/rbxapi"
 	"github.com/robloxapi/rbxapi/dump"
@@ -12,6 +11,15 @@ import (
 	"sort"
 	"strings"
 )
+
+type ErrReadDir struct {
+	Dir string
+	Err error
+}
+
+func (err ErrReadDir) Error() string {
+	return fmt.Sprintf("error reading dir %q: %s", err.Dir, err.Err.Error())
+}
 
 func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []string, rules []rulePair, refs map[string]*rbxfile.Instance) (actions []InAction, err error) {
 	defs := opt.RuleDefs
@@ -24,8 +32,7 @@ func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []str
 	for _, pair := range rules {
 		is, err := defs.CallIn(opt, cache, pair, dirname, jdir, refs)
 		if err != nil {
-			//ERROR
-			return nil, err
+			return nil, &ErrReadDir{Dir: jdir, Err: err}
 		}
 		for _, s := range is {
 			// Scan for directories.
@@ -58,8 +65,10 @@ func syncInReadDir(opt *Options, cache SourceCache, dirname string, subdir []str
 		sub[len(sub)-1] = name
 		a, err := syncInReadDir(opt, cache, dirname, sub, rules, refs)
 		if err != nil {
-			//ERROR
-			return nil, err
+			if err, ok := err.(*ErrReadDir); ok {
+				return nil, err
+			}
+			return nil, &ErrReadDir{Dir: jdir, Err: err}
 		}
 		actions = append(actions, a...)
 	}
@@ -357,7 +366,7 @@ func syncInApplyActions(opt *Options, dir, place string, refs map[string]*rbxfil
 	copy(root.Instances, datamodel.Children)
 	datamodel.RemoveAll()
 
-	f, _ := os.Create(filepath.Join(opt.Repo, "new-"+place))
+	f, _ = os.Create(filepath.Join(opt.Repo, "new-"+place))
 	err := bin.SerializePlace(f, opt.API, root)
 	f.Close()
 
@@ -371,10 +380,9 @@ func getDirPlace(dir string) (place string) {
 	return filepath.Base(dir) + ".rbxl"
 }
 
-func SyncInReadRepo(opt *Options) error {
+func SyncInReadRepo(opt *Options, dirNames []string) error {
 	if !pathIsRepo(opt.Repo) {
-		//ERROR:
-		return errors.New("not a repo")
+		return ErrNotRepo
 	}
 
 	rules, _ := getStdRules(opt)
@@ -385,39 +393,59 @@ func SyncInReadRepo(opt *Options) error {
 		fmt.Printf("\t%s\n", r)
 	}
 
-	dirs := getDirsInRepo(opt.Repo)
-	places := make([]string, len(dirs))
-	sources := make([]SourceCache, len(dirs))
-	actions := make([][]InAction, len(dirs))
-	refs := make([]map[string]*rbxfile.Instance, len(dirs))
-
-	for i, dir := range dirs {
-		places[i] = getDirPlace(dir)
-		sources[i] = SourceCache{}
-		refs[i] = map[string]*rbxfile.Instance{}
-		a, err := syncInReadDir(opt, sources[i], dir, []string{}, rules, refs[i])
-		if err != nil {
-			//ERROR
-			continue
-		}
-		actions[i] = syncInAnalyzeActions(a)
+	if len(dirNames) == 0 {
+		dirNames = getDirsInRepo(opt.Repo)
+	}
+	if len(dirNames) == 0 {
+		return ErrNoFiles
 	}
 
-	for i, dir := range dirs {
-		err := syncInVerifyActions(opt, dir, places[i], refs[i], sources[i], actions[i])
+	type dir struct {
+		name    string
+		place   string
+		sources SourceCache
+		actions []InAction
+		refs    map[string]*rbxfile.Instance
+	}
+
+	dirs := make([]dir, 0, len(dirNames))
+	errs := make(ErrsFile, 0, len(dirNames))
+
+	for _, name := range dirNames {
+		d := dir{
+			name:    name,
+			place:   getDirPlace(name),
+			sources: SourceCache{},
+			refs:    map[string]*rbxfile.Instance{},
+		}
+		var err error
+		d.actions, err = syncInReadDir(opt, d.sources, name, []string{}, rules, d.refs)
 		if err != nil {
-			//ERROR:
+			errs = append(errs, &ErrFile{FileName: name, Action: "syncing", Errors: []error{err}})
+			continue
+		}
+		d.actions = syncInAnalyzeActions(d.actions)
+		dirs = append(dirs, d)
+	}
+
+	for _, dir := range dirs {
+		err := syncInVerifyActions(opt, dir.name, dir.place, dir.refs, dir.sources, dir.actions)
+		if err != nil {
+			errs = append(errs, &ErrFile{FileName: dir.name, Action: "syncing", Errors: []error{err}})
 			continue
 		}
 	}
 
-	for i, dir := range dirs {
-		err := syncInApplyActions(opt, dir, places[i], refs[i], sources[i], actions[i])
+	for _, dir := range dirs {
+		err := syncInApplyActions(opt, dir.name, dir.place, dir.refs, dir.sources, dir.actions)
 		if err != nil {
-			//ERROR:
+			errs = append(errs, &ErrFile{FileName: dir.name, Action: "syncing", Errors: []error{err}})
 			continue
 		}
 	}
 
+	if len(errs) > 0 {
+		return errs
+	}
 	return nil
 }

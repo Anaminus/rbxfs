@@ -40,15 +40,39 @@ func GetFormatFromExt(ext string) Format {
 	return nil
 }
 
-type ErrFmtSelection struct {
+type ErrUnsupportedFormat struct {
 	Format string
 }
 
-func (err ErrFmtSelection) Error() string {
+func (err ErrUnsupportedFormat) Error() string {
+	return fmt.Sprintf("unsupported format %q", err.Format)
+}
+
+type ErrFormatEncode struct {
+	Err error
+}
+
+func (err ErrFormatEncode) Error() string {
+	return fmt.Sprintf("error encoding format: %s", err.Err.Error())
+}
+
+type ErrFormatDecode struct {
+	Err error
+}
+
+func (err ErrFormatDecode) Error() string {
+	return fmt.Sprintf("error decoding format: %s", err.Err.Error())
+}
+
+type ErrFormatSelection struct {
+	Format string
+}
+
+func (err ErrFormatSelection) Error() string {
 	return fmt.Sprintf("selection not supported by %s format")
 }
 
-type ErrFmtBounds struct {
+type ErrFormatBounds struct {
 	Format string
 	Type   string
 	Index  int
@@ -56,28 +80,12 @@ type ErrFmtBounds struct {
 	Max    int
 }
 
-func (err ErrFmtBounds) Error() string {
+func (err ErrFormatBounds) Error() string {
 	if err.Value < 0 {
 		return fmt.Sprintf("%s selection %d out of bounds (%d < 0)", err.Type, err.Index, err.Value)
 	} else {
 		return fmt.Sprintf("%s selection %d out of bounds (%d >= %d)", err.Type, err.Index, err.Value, err.Max)
 	}
-}
-
-type ErrFmtEncode struct {
-	Err error
-}
-
-func (err ErrFmtEncode) Error() string {
-	return fmt.Sprintf("failed to encode format: %s", err.Err.Error())
-}
-
-type ErrFmtDecode struct {
-	Err error
-}
-
-func (err ErrFmtDecode) Error() string {
-	return fmt.Sprintf("failed to decode format: %s", err.Err.Error())
 }
 
 func populateRefs(refs map[string]*rbxfile.Instance, objs []*rbxfile.Instance) {
@@ -140,8 +148,7 @@ func (FormatRBXM) CanEncode(sel []OutSelection) bool {
 }
 func (f FormatRBXM) Encode(w io.Writer, selections []OutSelection) error {
 	if !f.CanEncode(selections) {
-		//ERROR:
-		return ErrFmtSelection{f.Name()}
+		return ErrFormatSelection{f.Name()}
 	}
 
 	n := 0
@@ -153,22 +160,20 @@ func (f FormatRBXM) Encode(w io.Writer, selections []OutSelection) error {
 	for _, s := range selections {
 		for i, v := range s.Children {
 			if v < 0 || v >= len(s.Object.Children) {
-				//ERROR:
-				return ErrFmtBounds{f.Name(), "child", i, v, len(s.Object.Children)}
+				return ErrFormatBounds{f.Name(), "child", i, v, len(s.Object.Children)}
 			}
 			instances = append(instances, s.Object.Children[v])
 		}
 	}
 	if err := bin.SerializeModel(w, f.api, &rbxfile.Root{Instances: instances}); err != nil {
-		//ERROR:
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	return nil
 }
 func (f FormatRBXM) Decode(r io.Reader) (is *ItemSource, err error) {
 	root, err := bin.DeserializeModel(r, f.api)
 	if err != nil {
-		err = ErrFmtDecode{err}
+		err = ErrFormatDecode{err}
 		return
 	}
 	is = &ItemSource{Children: root.Instances}
@@ -209,8 +214,7 @@ func (FormatRBXMX) CanEncode(sel []OutSelection) bool {
 }
 func (f FormatRBXMX) Encode(w io.Writer, selections []OutSelection) error {
 	if !f.CanEncode(selections) {
-		//ERROR:
-		return ErrFmtSelection{f.Name()}
+		return ErrFormatSelection{f.Name()}
 	}
 
 	n := 0
@@ -222,22 +226,20 @@ func (f FormatRBXMX) Encode(w io.Writer, selections []OutSelection) error {
 	for _, s := range selections {
 		for i, v := range s.Children {
 			if v < 0 || v >= len(s.Object.Children) {
-				//ERROR:
-				return ErrFmtBounds{f.Name(), "child", i, v, len(s.Object.Children)}
+				return ErrFormatBounds{f.Name(), "child", i, v, len(s.Object.Children)}
 			}
 			instances = append(instances, s.Object.Children[v])
 		}
 	}
 	if err := xml.Serialize(w, f.api, &rbxfile.Root{Instances: instances}); err != nil {
-		//ERROR:
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	return nil
 }
 func (f FormatRBXMX) Decode(r io.Reader) (is *ItemSource, err error) {
 	root, err := xml.Deserialize(r, f.api)
 	if err != nil {
-		err = ErrFmtDecode{err}
+		err = ErrFormatDecode{err}
 		return
 	}
 	is = &ItemSource{Children: root.Instances}
@@ -278,8 +280,7 @@ func (FormatRBXL) CanEncode(sel []OutSelection) bool {
 }
 func (f FormatRBXL) Encode(w io.Writer, selections []OutSelection) error {
 	if !f.CanEncode(selections) {
-		//ERROR:
-		return ErrFmtSelection{f.Name()}
+		return ErrFormatSelection{f.Name()}
 	}
 
 	n := 0
@@ -291,22 +292,20 @@ func (f FormatRBXL) Encode(w io.Writer, selections []OutSelection) error {
 	for _, s := range selections {
 		for i, v := range s.Children {
 			if v < 0 || v >= len(s.Object.Children) {
-				//ERROR:
-				return ErrFmtBounds{f.Name(), "child", i, v, len(s.Object.Children)}
+				return ErrFormatBounds{f.Name(), "child", i, v, len(s.Object.Children)}
 			}
 			instances = append(instances, s.Object.Children[v])
 		}
 	}
 	if err := bin.SerializePlace(w, f.api, &rbxfile.Root{Instances: instances}); err != nil {
-		//ERROR:
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	return nil
 }
 func (f FormatRBXL) Decode(r io.Reader) (is *ItemSource, err error) {
 	root, err := bin.DeserializePlace(r, f.api)
 	if err != nil {
-		err = ErrFmtDecode{err}
+		err = ErrFormatDecode{err}
 		return
 	}
 	is = &ItemSource{Children: root.Instances}
@@ -347,8 +346,7 @@ func (FormatRBXLX) CanEncode(sel []OutSelection) bool {
 }
 func (f FormatRBXLX) Encode(w io.Writer, selections []OutSelection) error {
 	if !f.CanEncode(selections) {
-		//ERROR:
-		return ErrFmtSelection{f.Name()}
+		return ErrFormatSelection{f.Name()}
 	}
 
 	n := 0
@@ -360,22 +358,20 @@ func (f FormatRBXLX) Encode(w io.Writer, selections []OutSelection) error {
 	for _, s := range selections {
 		for i, v := range s.Children {
 			if v < 0 || v >= len(s.Object.Children) {
-				//ERROR:
-				return ErrFmtBounds{f.Name(), "child", i, v, len(s.Object.Children)}
+				return ErrFormatBounds{f.Name(), "child", i, v, len(s.Object.Children)}
 			}
 			instances = append(instances, s.Object.Children[v])
 		}
 	}
 	if err := xml.Serialize(w, f.api, &rbxfile.Root{Instances: instances}); err != nil {
-		//ERROR:
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	return nil
 }
 func (f FormatRBXLX) Decode(r io.Reader) (is *ItemSource, err error) {
 	root, err := xml.Deserialize(r, f.api)
 	if err != nil {
-		err = ErrFmtDecode{err}
+		err = ErrFormatDecode{err}
 		return
 	}
 	is = &ItemSource{Children: root.Instances}
@@ -416,8 +412,7 @@ func (FormatJSON) CanEncode(sel []OutSelection) bool {
 }
 func (f FormatJSON) Encode(w io.Writer, selections []OutSelection) error {
 	if !f.CanEncode(selections) {
-		//ERROR:
-		return ErrFmtSelection{f.Name()}
+		return ErrFormatSelection{f.Name()}
 	}
 
 	refs := f.refs
@@ -442,30 +437,25 @@ func (f FormatJSON) Encode(w io.Writer, selections []OutSelection) error {
 
 	b, err := json.Marshal(properties)
 	if err != nil {
-		// ERROR
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	buf := &bytes.Buffer{}
 	if err := json.Indent(buf, b, "", "\t"); err != nil {
-		// ERROR
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	if _, err := w.Write(buf.Bytes()); err != nil {
-		// ERROR
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	return nil
 }
 func (f FormatJSON) Decode(r io.Reader) (is *ItemSource, err error) {
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
-		// ERROR
-		return nil, ErrFmtDecode{err}
+		return nil, ErrFormatDecode{err}
 	}
 	iprops := map[string]interface{}{}
 	if err := json.Unmarshal(b, &iprops); err != nil {
-		// ERROR
-		return nil, ErrFmtDecode{err}
+		return nil, ErrFormatDecode{err}
 	}
 
 	if f.refs == nil {
@@ -561,20 +551,19 @@ func (FormatBin) CanEncode(sel []OutSelection) bool {
 }
 func (f FormatBin) Encode(w io.Writer, selections []OutSelection) error {
 	if !f.CanEncode(selections) {
-		//ERROR:
-		return ErrFmtSelection{f.Name()}
+		return ErrFormatSelection{f.Name()}
 	}
 	name := selections[0].Properties[0]
 	prop := selections[0].Object.Properties[name].(rbxfile.ValueBinaryString)
 	if _, err := w.Write([]byte(prop)); err != nil {
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	return nil
 }
 func (f FormatBin) Decode(r io.Reader) (is *ItemSource, err error) {
 	data, err := ioutil.ReadAll(r)
 	if err != nil {
-		return nil, ErrFmtDecode{err}
+		return nil, ErrFormatDecode{err}
 	}
 	is = &ItemSource{
 		Values: []rbxfile.Value{
@@ -617,20 +606,19 @@ func (FormatLua) CanEncode(sel []OutSelection) bool {
 }
 func (f FormatLua) Encode(w io.Writer, selections []OutSelection) error {
 	if !f.CanEncode(selections) {
-		//ERROR:
-		return ErrFmtSelection{f.Name()}
+		return ErrFormatSelection{f.Name()}
 	}
 	name := selections[0].Properties[0]
 	prop := selections[0].Object.Properties[name].(rbxfile.ValueProtectedString)
 	if _, err := w.Write([]byte(prop)); err != nil {
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	return nil
 }
 func (f FormatLua) Decode(r io.Reader) (is *ItemSource, err error) {
 	data, err := ioutil.ReadAll(r)
 	if err != nil {
-		return nil, ErrFmtDecode{err}
+		return nil, ErrFormatDecode{err}
 	}
 	is = &ItemSource{
 		Values: []rbxfile.Value{
@@ -673,20 +661,19 @@ func (FormatText) CanEncode(sel []OutSelection) bool {
 }
 func (f FormatText) Encode(w io.Writer, selections []OutSelection) error {
 	if !f.CanEncode(selections) {
-		//ERROR:
-		return ErrFmtSelection{f.Name()}
+		return ErrFormatSelection{f.Name()}
 	}
 	name := selections[0].Properties[0]
 	prop := selections[0].Object.Properties[name].(rbxfile.ValueString)
 	if _, err := w.Write([]byte(prop)); err != nil {
-		return ErrFmtEncode{err}
+		return ErrFormatEncode{err}
 	}
 	return nil
 }
 func (f FormatText) Decode(r io.Reader) (is *ItemSource, err error) {
 	data, err := ioutil.ReadAll(r)
 	if err != nil {
-		return nil, ErrFmtDecode{err}
+		return nil, ErrFormatDecode{err}
 	}
 	is = &ItemSource{
 		Values: []rbxfile.Value{

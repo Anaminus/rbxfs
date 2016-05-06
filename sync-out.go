@@ -1,7 +1,6 @@
 package rbxfs
 
 import (
-	"errors"
 	"fmt"
 	"github.com/robloxapi/rbxapi"
 	"github.com/robloxapi/rbxfile"
@@ -10,8 +9,48 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
+
+type ErrReadObject struct {
+	ClassName string
+	Name      string
+	Tree      []int
+	Err       error
+}
+
+func newErrReadObject(obj *rbxfile.Instance, err error) error {
+	n := 0
+	for p := obj.Parent(); p != nil; p = p.Parent() {
+		n++
+	}
+	tree := make([]int, n)
+
+	for p, c, i := obj.Parent(), obj, 0; p != nil; i++ {
+		for j, child := range p.Children {
+			if child == c {
+				tree[len(tree)-i-1] = j
+			}
+		}
+		p, c = p.Parent(), p
+	}
+
+	return &ErrReadObject{
+		ClassName: obj.ClassName,
+		Name:      obj.Name(),
+		Tree:      tree,
+		Err:       err,
+	}
+}
+
+func (err ErrReadObject) Error() string {
+	tree := make([]string, len(err.Tree))
+	for i, t := range err.Tree {
+		tree[i] = strconv.Itoa(t)
+	}
+	return fmt.Sprintf("error reading object %q (%s) [%s]: %s", err.Name, err.ClassName, strings.Join(tree, "."), err.Err.Error())
+}
 
 func syncOutReadObject(opt *Options, obj *rbxfile.Instance, dir []string, rules []rulePair) (actions []OutAction, err error) {
 	defs := opt.RuleDefs
@@ -23,8 +62,7 @@ func syncOutReadObject(opt *Options, obj *rbxfile.Instance, dir []string, rules 
 	for _, pair := range rules {
 		om, err := defs.CallOut(opt, pair, obj)
 		if err != nil {
-			//ERROR:
-			return nil, err
+			return nil, newErrReadObject(obj, err)
 		}
 		for _, m := range om {
 			if m.File.IsDir {
@@ -61,25 +99,14 @@ func syncOutReadObject(opt *Options, obj *rbxfile.Instance, dir []string, rules 
 		subdir[len(subdir)-1] = name
 		oa, err := syncOutReadObject(opt, child, subdir, rules)
 		if err != nil {
-			//ERROR:
-			// context: object that caused error
-			return nil, err
+			if err, ok := err.(*ErrReadObject); ok {
+				return nil, err
+			}
+			return nil, newErrReadObject(obj, err)
 		}
 		actions = append(actions, oa...)
 	}
 
-	// for _, child := range obj.Children {
-	// 	subdir := make([]string, len(dir)+1)
-	// 	copy(subdir, dir)
-	// 	subdir[len(subdir)-1] = child.Name()
-	// 	om, err := syncOutReadObject(opt, child, subdir, rules)
-	// 	if err != nil {
-	// 		//ERROR:
-	// 		// context: object that caused error
-	// 		return nil, err
-	// 	}
-	// 	actions = append(actions, om...)
-	// }
 	return actions, nil
 }
 
@@ -112,26 +139,23 @@ func decodePlaceFile(name string, api *rbxapi.API) (root *rbxfile.Root, err erro
 
 		place, err := os.Open(name)
 		if err != nil {
-			//ERROR:
 			return nil, err
 		}
 		defer place.Close()
 
 		root, err := s.Deserialize(place)
 		if err != nil {
-			//ERROR:
 			return nil, err
 		}
 		return root, err
+	default:
+		return nil, ErrUnsupportedFormat{Format: ext}
 	}
-	//ERROR:
-	return nil, errors.New("unsupported file type for " + name)
 }
 
 func syncOutReadPlace(opt *Options, place string, rules []rulePair) (root *rbxfile.Root, actions []OutAction, err error) {
 	root, err = decodePlaceFile(filepath.Join(opt.Repo, place), opt.API)
 	if err != nil {
-		//ERROR:
 		return
 	}
 
@@ -142,16 +166,6 @@ func syncOutReadPlace(opt *Options, place string, rules []rulePair) (root *rbxfi
 	}
 
 	actions, err = syncOutReadObject(opt, datamodel, []string{}, rules)
-
-	// for _, obj := range root.Instances {
-	// 	oa, err := syncOutReadObject(opt, obj, []string{dir}, rules)
-	// 	if err != nil {
-	// 		//ERROR:
-	// 		// context: object that caused error
-	// 		return nil, nil, err
-	// 	}
-	// 	actions = append(actions, oa...)
-	// }
 	return
 }
 
@@ -535,10 +549,9 @@ func getPlaceDir(place string) string {
 	return filepath.Join(filepath.Dir(place), b[:len(b)-len(filepath.Ext(place))])
 }
 
-func SyncOutReadRepo(opt *Options) error {
+func SyncOutReadRepo(opt *Options, placeNames []string) error {
 	if !pathIsRepo(opt.Repo) {
-		//ERROR:
-		return errors.New("not a repo")
+		return ErrNotRepo
 	}
 
 	rules, _ := getStdRules(opt)
@@ -549,37 +562,56 @@ func SyncOutReadRepo(opt *Options) error {
 		fmt.Printf("\t%s\n", r)
 	}
 
-	places := getPlacesInRepo(opt.Repo)
-	dirs := make([]string, len(places))
-	roots := make([]*rbxfile.Root, len(places))
-	actions := make([][]OutAction, len(places))
-	for i, place := range places {
-		dirs[i] = getPlaceDir(place)
-		root, a, err := syncOutReadPlace(opt, place, rules)
-		if err != nil {
-			//ERROR:
-			fmt.Println("ERROR", err)
-			continue
-		}
-		roots[i] = root
-		actions[i] = syncOutAnalyzeActions(a)
+	if len(placeNames) == 0 {
+		placeNames = getPlacesInRepo(opt.Repo)
+	}
+	if len(placeNames) == 0 {
+		return ErrNoFiles
 	}
 
-	for i, place := range places {
-		err := syncOutVerifyActions(opt, place, dirs[i], roots[i], actions[i])
+	type place struct {
+		name    string
+		dir     string
+		root    *rbxfile.Root
+		actions []OutAction
+	}
+
+	places := make([]place, 0, len(placeNames))
+	errs := make(ErrsFile, 0, len(placeNames))
+
+	for _, name := range placeNames {
+		p := place{
+			name: name,
+			dir:  getPlaceDir(name),
+		}
+		var err error
+		p.root, p.actions, err = syncOutReadPlace(opt, name, rules)
 		if err != nil {
-			//ERROR:
+			errs = append(errs, &ErrFile{FileName: name, Action: "syncing", Errors: []error{err}})
+			continue
+		}
+		p.actions = syncOutAnalyzeActions(p.actions)
+		places = append(places, p)
+	}
+
+	for _, place := range places {
+		err := syncOutVerifyActions(opt, place.name, place.dir, place.root, place.actions)
+		if err != nil {
+			errs = append(errs, &ErrFile{FileName: place.name, Action: "syncing", Errors: []error{err}})
 			continue
 		}
 	}
 
-	for i, place := range places {
-		err := syncOutApplyActions(opt, place, dirs[i], roots[i], actions[i])
+	for _, place := range places {
+		err := syncOutApplyActions(opt, place.name, place.dir, place.root, place.actions)
 		if err != nil {
-			//ERROR:
+			errs = append(errs, &ErrFile{FileName: place.name, Action: "syncing", Errors: []error{err}})
 			continue
 		}
 	}
 
+	if len(errs) > 0 {
+		return errs
+	}
 	return nil
 }
